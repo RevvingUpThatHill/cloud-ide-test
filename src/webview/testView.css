@@ -1,0 +1,203 @@
+/* Base styles */
+body {
+    padding: 10px;
+    font-family: var(--vscode-font-family);
+    color: var(--vscode-foreground);
+    margin: 0;
+    font-size: 11px;
+    background-color: var(--vscode-editor-background);
+}
+
+/* Header section */
+.header {
+    border-bottom: 1px solid var(--vscode-panel-border);
+    padding-bottom: 8px;
+    margin-bottom: 12px;
+}
+
+/* Button styles */
+button {
+    background-color: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border: none;
+    padding: 8px 16px;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 500;
+    border-radius: 4px;
+    width: 100%;
+    transition: all 0.2s ease;
+}
+
+button:hover:not(:disabled) {
+    background-color: var(--vscode-button-hoverBackground);
+}
+
+button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Status styles */
+.status {
+    padding: 6px 8px;
+    margin-bottom: 12px;
+    border-radius: 4px;
+    font-size: 10px;
+    border: 1px solid var(--vscode-panel-border);
+}
+
+.status.running {
+    background-color: var(--vscode-inputValidation-infoBackground);
+    border-color: var(--vscode-inputValidation-infoBorder);
+    color: var(--vscode-foreground);
+}
+
+.status.success {
+    background-color: var(--vscode-inputValidation-infoBackground);
+    border-color: var(--vscode-testing-iconPassed);
+    color: var(--vscode-testing-iconPassed);
+}
+
+.status.error {
+    background-color: var(--vscode-inputValidation-errorBackground);
+    border-color: var(--vscode-inputValidation-errorBorder);
+    color: var(--vscode-inputValidation-errorForeground);
+}
+
+/* Results section */
+.results {
+    margin-top: 12px;
+}
+
+/* Test summary with stats grid */
+.test-summary {
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 4px;
+    margin-bottom: 12px;
+    padding: 8px;
+    background-color: var(--vscode-editor-background);
+}
+
+.section-title {
+    font-size: 10px;
+    font-weight: bold;
+    text-transform: uppercase;
+    color: var(--vscode-descriptionForeground);
+    margin: 0 0 8px 0;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--vscode-panel-border);
+    letter-spacing: 0.5px;
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.stat-item {
+    background-color: var(--vscode-textCodeBlock-background);
+    padding: 6px;
+    border-radius: 4px;
+    text-align: center;
+    border: 1px solid var(--vscode-panel-border);
+}
+
+.stat-value {
+    display: block;
+    font-weight: bold;
+    font-size: 14px;
+    color: var(--vscode-textLink-foreground);
+}
+
+.stat-label {
+    display: block;
+    font-size: 9px;
+    color: var(--vscode-descriptionForeground);
+    margin-top: 2px;
+    text-transform: uppercase;
+}
+
+/* Individual test items */
+.test-item {
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 4px;
+    margin-bottom: 8px;
+    padding: 8px;
+    background-color: var(--vscode-editor-background);
+    border-left: 3px solid;
+}
+
+.test-item.passed {
+    border-left-color: var(--vscode-testing-iconPassed);
+}
+
+.test-item.failed {
+    border-left-color: var(--vscode-testing-iconFailed);
+}
+
+.test-item.skipped {
+    border-left-color: var(--vscode-testing-iconSkipped);
+}
+
+.test-name {
+    font-weight: bold;
+    margin-bottom: 4px;
+    font-size: 11px;
+    color: var(--vscode-foreground);
+}
+
+.test-status {
+    font-size: 9px;
+    margin-bottom: 4px;
+    color: var(--vscode-descriptionForeground);
+    text-transform: uppercase;
+}
+
+.test-details {
+    margin-top: 8px;
+    padding: 8px;
+    background-color: var(--vscode-textCodeBlock-background);
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 4px;
+    font-size: 10px;
+    font-family: var(--vscode-editor-font-family);
+}
+
+.test-details .label {
+    font-weight: bold;
+    margin-top: 6px;
+    display: block;
+    font-size: 9px;
+    color: var(--vscode-descriptionForeground);
+    text-transform: uppercase;
+}
+
+.test-details .label:first-child {
+    margin-top: 0;
+}
+
+.test-details .value {
+    margin-top: 3px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--vscode-foreground);
+    font-size: 10px;
+}
+
+/* No results state */
+.no-results {
+    text-align: center;
+    padding: 24px 16px;
+    color: var(--vscode-descriptionForeground);
+    font-style: italic;
+    font-size: 10px;
+}
+
+/* Utility classes */
+.hidden {
+    display: none;
+}
+

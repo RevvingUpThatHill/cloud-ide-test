@@ -1,0 +1,69 @@
+{
+  "name": "cloud-ide-test",
+  "displayName": "Cloud IDE Test",
+  "description": "Multi-language testing extension for Java, Angular, and Python with activity tracking",
+  "version": "0.0.1",
+  "aiKey": "YOUR_APPLICATION_INSIGHTS_KEY",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Testing"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "cloud-ide-test",
+          "title": "Cloud IDE Test",
+          "icon": "$(beaker)"
+        }
+      ]
+    },
+    "views": {
+      "cloud-ide-test": [
+        {
+          "type": "webview",
+          "id": "cloudIdeTestView",
+          "name": "Test Runner"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "cloud-ide-test.runTests",
+        "title": "Run Tests",
+        "category": "Cloud IDE Test"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./ && npm run copy-webview",
+    "copy-webview": "node -e \"require('fs').cpSync('src/webview', 'out/webview', {recursive: true})\"",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/glob": "^8.0.0",
+    "@types/mocha": "^10.0.1",
+    "@types/node": "16.x",
+    "@types/vscode": "^1.75.0",
+    "@typescript-eslint/eslint-plugin": "^5.45.0",
+    "@typescript-eslint/parser": "^5.45.0",
+    "@vscode/test-electron": "^2.2.0",
+    "eslint": "^8.28.0",
+    "glob": "^8.0.3",
+    "mocha": "^10.1.0",
+    "typescript": "^4.9.3"
+  },
+  "dependencies": {
+    "vscode-extension-telemetry-wrapper": "^0.14.0"
+  }
+}
