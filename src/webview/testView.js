@@ -80,19 +80,36 @@ function renderTests(options = {}) {
     const error = Array.from(testStates.values()).filter(t => t.state === 'error').length;
     const skipped = Array.from(testStates.values()).filter(t => t.state === 'skipped').length;
     
-    // Determine flash animations for stats (only when values change)
+    // While tests are running, show previous stats to avoid jitter
+    let displayPassed = passed;
+    let displayFailed = failed;
+    let displayError = error;
+    
+    if (running > 0 && !options.afterTestResults) {
+        // Tests are running, show previous final stats
+        displayPassed = previousStats.passed || 0;
+        displayFailed = previousStats.failed || 0;
+        displayError = previousStats.error || 0;
+    }
+    
+    // Determine flash animations for stats (only after test results complete)
     let passedFlash = '';
     let failedFlash = '';
     let errorFlash = '';
     
-    if (passed !== previousStats.passed && previousStats.passed !== undefined) {
-        passedFlash = passed > previousStats.passed ? 'stat-flash-green' : 'stat-flash-red';
-    }
-    if (failed !== previousStats.failed && previousStats.failed !== undefined) {
-        failedFlash = 'stat-flash-red';
-    }
-    if (error !== previousStats.error && previousStats.error !== undefined) {
-        errorFlash = 'stat-flash-red';
+    if (options.afterTestResults) {
+        if (passed !== previousStats.passed && previousStats.passed !== undefined) {
+            passedFlash = passed > previousStats.passed ? 'stat-flash-green' : 'stat-flash-red';
+        }
+        if (failed !== previousStats.failed && previousStats.failed !== undefined) {
+            failedFlash = 'stat-flash-red';
+        }
+        if (error !== previousStats.error && previousStats.error !== undefined) {
+            errorFlash = 'stat-flash-red';
+        }
+        
+        // Update previous stats after displaying flash
+        previousStats = { passed, failed, error };
     }
     
     let html = `
@@ -104,31 +121,33 @@ function renderTests(options = {}) {
                     <span class="stat-label">Total</span>
                 </div>
                 <div class="stat-item ${passedFlash}">
-                    <span class="stat-value" style="color: #73c991;">${passed}</span>
+                    <span class="stat-value" style="color: #73c991;">${displayPassed}</span>
                     <span class="stat-label">Passed</span>
                 </div>
                 <div class="stat-item ${failedFlash}">
-                    <span class="stat-value" style="color: #d32f2f;">${failed}</span>
+                    <span class="stat-value" style="color: #d32f2f;">${displayFailed}</span>
                     <span class="stat-label">Failed</span>
                 </div>
                 <div class="stat-item ${errorFlash}">
-                    <span class="stat-value" style="color: #a65e2b;">${error}</span>
+                    <span class="stat-value" style="color: #a65e2b;">${displayError}</span>
                     <span class="stat-label">Errors</span>
                 </div>
             </div>
         </div>
     `;
     
-    // Update previous stats for next comparison
-    previousStats = { passed, failed, error };
-    
     testStates.forEach((test, name) => {
         const stateClass = test.state || 'not-run';
-        const displayState = test.state || 'not run';
+        let displayState = test.state || 'not run';
+        
+        // While running, show the previous state text to avoid jitter
+        const previousTest = previousTestStates.get(name);
+        if (test.state === 'running' && previousTest && previousTest.state !== 'running') {
+            displayState = previousTest.state === 'not-run' ? 'not run' : previousTest.state;
+        }
         
         // Check if status changed from previous run
         let flashClass = '';
-        const previousTest = previousTestStates.get(name);
         if (previousTest) {
             console.log(`Comparing "${name}": previous="${previousTest.state}" current="${test.state}"`);
             if (previousTest.state !== test.state) {
@@ -147,21 +166,27 @@ function renderTests(options = {}) {
             console.log(`No previous state for "${name}"`);
         }
         
+        // While running, show previous test details to avoid jitter from changing heights
+        let testDetails = test;
+        if (test.state === 'running' && previousTest) {
+            testDetails = previousTest;
+        }
+        
         console.log(`Rendering test "${name}" with state "${test.state}" (class: test-${stateClass} ${flashClass})`);
         html += `
             <div class="test-item test-${stateClass} ${flashClass}">
                 <div class="test-name">${escapeHtml(name)}</div>
                 <div class="test-status">${displayState}</div>
-                ${test.duration ? `<div class="test-duration">Duration: ${test.duration}ms</div>` : ''}
-                ${test.message ? `<div class="test-details">
+                ${testDetails.duration ? `<div class="test-duration">Duration: ${testDetails.duration}ms</div>` : ''}
+                ${testDetails.message ? `<div class="test-details">
                     <span class="label">Message</span>
-                    <div class="value">${escapeHtml(test.message)}</div>
+                    <div class="value">${escapeHtml(testDetails.message)}</div>
                 </div>` : ''}
-                ${test.expected ? `<div class="test-details">
+                ${testDetails.expected ? `<div class="test-details">
                     <span class="label">Expected</span>
-                    <div class="value">${escapeHtml(test.expected)}</div>
+                    <div class="value">${escapeHtml(testDetails.expected)}</div>
                     <span class="label">Actual</span>
-                    <div class="value">${escapeHtml(test.actual || 'N/A')}</div>
+                    <div class="value">${escapeHtml(testDetails.actual || 'N/A')}</div>
                 </div>` : ''}
             </div>
         `;
@@ -258,8 +283,8 @@ function renderResults(results, workspaceType) {
         console.log(`  "${key}": state="${value.state}"`);
     });
     
-    // Render with saved scroll anchor to avoid jumps
-    renderTests({ useScrollAnchor: true });
+    // Render with saved scroll anchor to avoid jumps, and trigger stat flashes
+    renderTests({ useScrollAnchor: true, afterTestResults: true });
     
     // Clear scroll anchor after use
     scrollAnchor = null;
@@ -299,6 +324,9 @@ window.addEventListener('message', event => {
             testStates.forEach((value, key) => {
                 previousTestStates.set(key, { state: value.state });
             });
+            
+            // Initialize previous stats (all zeros since all tests are not-run)
+            previousStats = { passed: 0, failed: 0, error: 0 };
             
             // Save state
             vscode.setState({
