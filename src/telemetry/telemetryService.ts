@@ -10,7 +10,7 @@ export class TelemetryService {
     private initialized: boolean = false;
 
     private constructor(context: vscode.ExtensionContext, aiKey: string) {
-        if (aiKey && aiKey !== 'YOUR_APPLICATION_INSIGHTS_KEY') {
+        if (aiKey && aiKey !== '') {
             try {
                 const extensionId = context.extension.id;
                 const extensionVersion = context.extension.packageJSON.version;

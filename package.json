@@ -3,7 +3,8 @@
   "displayName": "Cloud IDE Test",
   "description": "Multi-language testing extension for Java, Angular, and Python with activity tracking",
   "version": "0.0.1",
-  "aiKey": "YOUR_APPLICATION_INSIGHTS_KEY",
+  "publisher": "Revature",
+  "author": "Theodore Balashov",
   "engines": {
     "vscode": "^1.75.0"
   },

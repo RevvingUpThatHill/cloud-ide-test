@@ -44,9 +44,9 @@ export function loadConfig(packageJson: any): ExtensionConfig {
         errors.push(`workspace_type must be "Java", "Angular", or "Python", got: "${workspaceType}"`);
     }
 
-    // Load telemetry configuration
-    const aiKey = packageJson.aiKey || process.env.TELEMETRY_AI_KEY || 'YOUR_APPLICATION_INSIGHTS_KEY';
-    const telemetryEnabled = aiKey !== 'YOUR_APPLICATION_INSIGHTS_KEY';
+    // Load telemetry configuration from environment variables
+    const aiKey = process.env.TELEMETRY_AI_KEY || '';
+    const telemetryEnabled = aiKey !== '';
     const telemetryEndpoint = process.env.TELEMETRY_ENDPOINT || 'https://dc.services.visualstudio.com/v2/track';
 
     // Validate telemetry endpoint format
@@ -114,8 +114,8 @@ function isValidUrl(urlString: string): boolean {
  * Mask sensitive data for logging (show first and last 4 chars)
  */
 function maskSensitiveData(value: string): string {
-    if (value === 'YOUR_APPLICATION_INSIGHTS_KEY') {
-        return value;
+    if (value === '') {
+        return '(not set)';
     }
     if (value.length <= 8) {
         return '****';

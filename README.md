@@ -23,9 +23,18 @@ A multi-language testing extension for Visual Studio Code that supports Java (Ma
 
 ### Setup
 
-1. Set the `workspace_type` environment variable to one of: `Java`, `Angular`, or `Python`
-   - Windows: `set workspace_type=Java`
-   - Linux/Mac: `export workspace_type=Java`
+1. Set the required environment variables:
+   - `workspace_type`: One of `Java`, `Angular`, or `Python` (REQUIRED)
+     - Windows: `set workspace_type=Java`
+     - Linux/Mac: `export workspace_type=Java`
+   
+   - `TELEMETRY_AI_KEY`: Application Insights instrumentation key (OPTIONAL)
+     - Windows: `set TELEMETRY_AI_KEY=your-key-here`
+     - Linux/Mac: `export TELEMETRY_AI_KEY=your-key-here`
+   
+   - `TELEMETRY_ENDPOINT`: Telemetry endpoint URL (OPTIONAL, defaults to Azure Application Insights)
+     - Windows: `set TELEMETRY_ENDPOINT=https://your-endpoint.com/v2/track`
+     - Linux/Mac: `export TELEMETRY_ENDPOINT=https://your-endpoint.com/v2/track`
 
 2. Open your project in VS Code
 
@@ -55,7 +64,11 @@ A multi-language testing extension for Visual Studio Code that supports Java (Ma
 
 ## Extension Settings
 
-This extension reads the `workspace_type` environment variable to determine the test framework to use.
+This extension uses environment variables for configuration:
+
+- **workspace_type** (required): Determines which test framework to use (`Java`, `Angular`, or `Python`)
+- **TELEMETRY_AI_KEY** (optional): Azure Application Insights instrumentation key for telemetry
+- **TELEMETRY_ENDPOINT** (optional): Custom telemetry endpoint URL
 
 ## Development
 
