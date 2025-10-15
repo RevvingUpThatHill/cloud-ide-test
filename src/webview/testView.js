@@ -87,6 +87,10 @@ window.addEventListener('message', event => {
     const button = document.getElementById('runTestsBtn');
     
     switch (message.type) {
+        case 'configWarning':
+            showStatus('⚠️ ' + message.warning, 'warning');
+            break;
+            
         case 'configError':
             button.disabled = true;
             const resultsEl = document.getElementById('results');

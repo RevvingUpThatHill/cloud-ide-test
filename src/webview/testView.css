@@ -65,6 +65,12 @@ button:disabled {
     color: var(--vscode-inputValidation-errorForeground);
 }
 
+.status.warning {
+    background-color: var(--vscode-inputValidation-warningBackground);
+    border-color: var(--vscode-inputValidation-warningBorder);
+    color: var(--vscode-inputValidation-warningForeground);
+}
+
 /* Results section */
 .results {
     margin-top: 12px;

@@ -15,11 +15,20 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
     private _view?: vscode.WebviewView;
     private workspaceType: string;
     private testAdapter: TestAdapter;
+    private configWarnings: string[];
+    private workspaceTypeDisplay: string;
 
-    constructor(private readonly _extensionUri: vscode.Uri) {
+    constructor(private readonly _extensionUri: vscode.Uri, configWarnings: string[] = []) {
         // Get configuration (already validated at extension startup)
         const config = getConfig();
         this.workspaceType = config.workspaceType;
+        this.configWarnings = configWarnings;
+        
+        // Determine display name (add "default" label if workspace_type was not set)
+        const hasWorkspaceTypeWarning = configWarnings.some(w => w.includes('workspace_type'));
+        this.workspaceTypeDisplay = hasWorkspaceTypeWarning 
+            ? `${config.workspaceType} (default)` 
+            : config.workspaceType;
         
         // Initialize the appropriate test adapter
         this.testAdapter = this.getTestAdapter(config.workspaceType);
@@ -49,6 +58,17 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
         };
 
         webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
+
+        // Send configuration warnings to webview if any
+        if (this.configWarnings.length > 0) {
+            // Use setTimeout to ensure the webview is fully loaded
+            setTimeout(() => {
+                webviewView.webview.postMessage({
+                    type: 'configWarning',
+                    warning: this.configWarnings.join('\n')
+                });
+            }, 100);
+        }
 
         // Handle messages from the webview
         webviewView.webview.onDidReceiveMessage(async (data) => {
@@ -162,7 +182,7 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
         const html = htmlTemplate
             .replace('__STYLES__', cssContent)
             .replace('__SCRIPT__', jsContent)
-            .replace('__WORKSPACE_TYPE__', this.workspaceType);
+            .replace('__WORKSPACE_TYPE__', this.workspaceTypeDisplay);
         
         return html;
     }

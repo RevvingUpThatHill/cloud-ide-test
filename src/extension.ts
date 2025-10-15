@@ -7,7 +7,7 @@ export async function activate(context: vscode.ExtensionContext) {
     console.log('Cloud IDE Test extension is now active');
 
     try {
-        // Load and validate configuration - FAIL FAST
+        // Load and validate configuration
         const packageJson = context.extension.packageJSON;
         const config = loadConfig(packageJson);
         setConfig(config);
@@ -19,7 +19,7 @@ export async function activate(context: vscode.ExtensionContext) {
         );
 
         // Register the webview provider for the sidebar
-        const provider = new TestViewProvider(context.extensionUri);
+        const provider = new TestViewProvider(context.extensionUri, config.warnings);
         
         context.subscriptions.push(
             vscode.window.registerWebviewViewProvider(
@@ -45,6 +45,13 @@ export async function activate(context: vscode.ExtensionContext) {
         });
 
         console.log(`Cloud IDE Test extension activated for ${config.workspaceType} workspace`);
+        
+        // Show warnings to user if any
+        if (config.warnings.length > 0) {
+            vscode.window.showWarningMessage(
+                `Cloud IDE Test: ${config.warnings[0]}`
+            );
+        }
     } catch (error) {
         if (error instanceof ConfigurationError) {
             // Show user-friendly error message

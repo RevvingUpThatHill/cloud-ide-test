@@ -23,22 +23,33 @@ A multi-language testing extension for Visual Studio Code that supports Java (Ma
 
 ### Setup
 
-1. Set the required environment variables:
-   - `workspace_type`: One of `Java`, `Angular`, or `Python` (REQUIRED)
-     - Windows: `set workspace_type=Java`
-     - Linux/Mac: `export workspace_type=Java`
-   
-   - `TELEMETRY_AI_KEY`: Application Insights instrumentation key (OPTIONAL)
+1. Create a `.lab.json` file in your workspace root with the following content:
+
+   ```json
+   {
+     "workspaceType": "Java"
+   }
+   ```
+
+   Valid values for `workspaceType`:
+   - `"Java"` - For Java/Maven projects with JUnit tests
+   - `"Angular"` - For Angular projects with Jasmine/Karma tests
+   - `"Python"` - For Python projects with unittest tests
+
+   **Note**: If `.lab.json` is not found or invalid, the extension will default to Python and display a warning.
+
+2. (Optional) Set environment variables for telemetry:
+   - `TELEMETRY_AI_KEY`: Application Insights instrumentation key
      - Windows: `set TELEMETRY_AI_KEY=your-key-here`
      - Linux/Mac: `export TELEMETRY_AI_KEY=your-key-here`
    
-   - `TELEMETRY_ENDPOINT`: Telemetry endpoint URL (OPTIONAL, defaults to Azure Application Insights)
+   - `TELEMETRY_ENDPOINT`: Custom telemetry endpoint URL (defaults to Azure Application Insights)
      - Windows: `set TELEMETRY_ENDPOINT=https://your-endpoint.com/v2/track`
      - Linux/Mac: `export TELEMETRY_ENDPOINT=https://your-endpoint.com/v2/track`
 
-2. Open your project in VS Code
+3. Open your project in VS Code
 
-3. Click on the Cloud IDE Test icon in the Activity Bar (left sidebar)
+4. Click on the Cloud IDE Test icon in the Activity Bar (left sidebar)
 
 ### Running Tests
 
@@ -64,11 +75,27 @@ A multi-language testing extension for Visual Studio Code that supports Java (Ma
 
 ## Extension Settings
 
-This extension uses environment variables for configuration:
+This extension uses a combination of configuration file and environment variables:
 
-- **workspace_type** (required): Determines which test framework to use (`Java`, `Angular`, or `Python`)
+### Configuration File (.lab.json)
+
+Place a `.lab.json` file in your workspace root with the following structure:
+
+```json
+{
+  "workspaceType": "Java"
+}
+```
+
+- **workspaceType** (optional, defaults to `Python`): Determines which test framework to use
+  - Valid values: `"Java"`, `"Angular"`, or `"Python"`
+
+### Environment Variables
+
 - **TELEMETRY_AI_KEY** (optional): Azure Application Insights instrumentation key for telemetry
 - **TELEMETRY_ENDPOINT** (optional): Custom telemetry endpoint URL
+
+The extension will activate successfully even if `.lab.json` is not found. It will default to Python and display a warning message in the webview.
 
 ## Development
 
@@ -77,7 +104,7 @@ To run this extension in development mode:
 1. Install dependencies: `npm install`
 2. Open in VS Code
 3. Press F5 to open a new window with the extension loaded
-4. Set the `workspace_type` environment variable before launching VS Code
+4. In the test project, create a `.lab.json` file with your desired workspace type
 5. Open a test project and try the extension
 
 ## Building

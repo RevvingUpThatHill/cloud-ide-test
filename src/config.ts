@@ -1,7 +1,15 @@
 /**
- * Configuration module - Fail-fast loading of environment variables and constants
+ * Configuration module - Loads configuration from .lab.json and environment variables
  * Validates all required configuration on extension startup
  */
+
+import * as vscode from 'vscode';
+import * as fs from 'fs';
+import * as path from 'path';
+
+export interface LabConfig {
+    workspaceType: 'Java' | 'Angular' | 'Python';
+}
 
 export interface ExtensionConfig {
     // Workspace configuration
@@ -17,6 +25,9 @@ export interface ExtensionConfig {
     // Extension metadata
     extensionId: string;
     extensionVersion: string;
+    
+    // Configuration warnings (non-fatal issues)
+    warnings: string[];
 }
 
 /**
@@ -30,18 +41,69 @@ export class ConfigurationError extends Error {
 }
 
 /**
- * Load and validate configuration from environment variables and package.json
- * Fails fast if required configuration is missing or invalid
+ * Load .lab.json configuration from workspace root
+ */
+function loadLabConfig(): { workspaceType: string | null; warning: string | null } {
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    
+    if (!workspaceFolders || workspaceFolders.length === 0) {
+        return { 
+            workspaceType: null, 
+            warning: 'No workspace folder found. Defaulting to "Python (default)".' 
+        };
+    }
+
+    const workspaceRoot = workspaceFolders[0].uri.fsPath;
+    const labConfigPath = path.join(workspaceRoot, '.lab.json');
+
+    if (!fs.existsSync(labConfigPath)) {
+        return { 
+            workspaceType: null, 
+            warning: '.lab.json file not found in workspace root. Defaulting to "Python (default)". Create a .lab.json file with {"workspaceType": "Java"}, {"workspaceType": "Angular"}, or {"workspaceType": "Python"}.' 
+        };
+    }
+
+    try {
+        const fileContent = fs.readFileSync(labConfigPath, 'utf8');
+        const labConfig: LabConfig = JSON.parse(fileContent);
+
+        if (!labConfig.workspaceType) {
+            return { 
+                workspaceType: null, 
+                warning: '.lab.json is missing "workspaceType" property. Defaulting to "Python (default)".' 
+            };
+        }
+
+        if (!['Java', 'Angular', 'Python'].includes(labConfig.workspaceType)) {
+            return { 
+                workspaceType: null, 
+                warning: `.lab.json has invalid workspaceType "${labConfig.workspaceType}". Must be "Java", "Angular", or "Python". Defaulting to "Python (default)".` 
+            };
+        }
+
+        return { workspaceType: labConfig.workspaceType, warning: null };
+    } catch (error) {
+        return { 
+            workspaceType: null, 
+            warning: `.lab.json is invalid JSON: ${error instanceof Error ? error.message : String(error)}. Defaulting to "Python (default)".` 
+        };
+    }
+}
+
+/**
+ * Load and validate configuration from .lab.json and environment variables
+ * Defaults to Python if .lab.json is not found or invalid
  */
 export function loadConfig(packageJson: any): ExtensionConfig {
     const errors: string[] = [];
+    const warnings: string[] = [];
 
-    // Load workspace type (REQUIRED)
-    const workspaceType = process.env.workspace_type?.trim();
-    if (!workspaceType) {
-        errors.push('workspace_type environment variable is required (must be "Java", "Angular", or "Python")');
-    } else if (!['Java', 'Angular', 'Python'].includes(workspaceType)) {
-        errors.push(`workspace_type must be "Java", "Angular", or "Python", got: "${workspaceType}"`);
+    // Load workspace type from .lab.json (defaults to Python)
+    const labConfigResult = loadLabConfig();
+    let workspaceType = labConfigResult.workspaceType || 'Python';
+    
+    if (labConfigResult.warning) {
+        warnings.push(labConfigResult.warning);
     }
 
     // Load telemetry configuration from environment variables
@@ -80,7 +142,8 @@ export function loadConfig(packageJson: any): ExtensionConfig {
             endpoint: telemetryEndpoint
         },
         extensionId,
-        extensionVersion
+        extensionVersion,
+        warnings
     };
 
     // Log loaded configuration (mask sensitive data)
@@ -92,8 +155,14 @@ export function loadConfig(packageJson: any): ExtensionConfig {
             endpoint: config.telemetry.endpoint
         },
         extensionId: config.extensionId,
-        extensionVersion: config.extensionVersion
+        extensionVersion: config.extensionVersion,
+        warnings: config.warnings
     });
+
+    // Log warnings if any
+    if (warnings.length > 0) {
+        console.warn('Configuration warnings:', warnings);
+    }
 
     return config;
 }
