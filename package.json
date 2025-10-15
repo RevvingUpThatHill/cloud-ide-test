@@ -5,6 +5,15 @@
   "version": "0.0.1",
   "publisher": "Revature",
   "author": "Theodore Balashov",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/revvingupthathill/cloud-ide-test.git"
+  },
+  "bugs": {
+    "url": "https://github.com/revvingupthathill/cloud-ide-test/issues"
+  },
+  "homepage": "https://github.com/revvingupthathill/cloud-ide-test#readme",
   "engines": {
     "vscode": "^1.75.0"
   },

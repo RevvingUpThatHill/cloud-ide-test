@@ -15,8 +15,10 @@ body {
     z-index: 100;
     background-color: var(--vscode-editor-background);
     border-bottom: 1px solid var(--vscode-panel-border);
+    padding-top: 10px;
     padding-bottom: 8px;
     margin-bottom: 12px;
+    margin-top: -10px; /* Compensate for padding */
 }
 
 /* Button styles */
@@ -167,7 +169,7 @@ button:disabled {
 }
 
 .test-item.test-failed {
-    border-left-color: #f14c4c !important; /* Red */
+    border-left-color: #d32f2f !important; /* Darker red */
 }
 
 .test-item.test-error {
