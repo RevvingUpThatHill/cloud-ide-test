@@ -89,18 +89,28 @@ window.addEventListener('message', event => {
     switch (message.type) {
         case 'configWarning':
             showStatus('⚠️ ' + message.warning, 'warning');
+            // Save state
+            vscode.setState({
+                status: { message: '⚠️ ' + message.warning, type: 'warning' }
+            });
             break;
             
         case 'configError':
             button.disabled = true;
             const resultsEl = document.getElementById('results');
             resultsEl.innerHTML = `<div class="no-results">${escapeHtml(message.error)}</div>`;
+            // Save state
+            vscode.setState({
+                status: { message: 'Configuration error', type: 'error' },
+                error: message.error
+            });
             break;
             
         case 'testRunning':
             button.disabled = true;
             showStatus('Running tests...', 'running');
             document.getElementById('results').innerHTML = '';
+            // Don't persist "running" state
             break;
             
         case 'testResults':
@@ -108,19 +118,54 @@ window.addEventListener('message', event => {
             const totalTests = message.results.tests.length;
             const failedTests = message.results.tests.filter(t => t.status === 'failed').length;
             
+            let statusMessage, statusType;
             if (failedTests === 0) {
-                showStatus(`Tests completed successfully! (${totalTests} tests)`, 'success');
+                statusMessage = `Tests completed successfully! (${totalTests} tests)`;
+                statusType = 'success';
             } else {
-                showStatus(`Tests completed with ${failedTests} failure(s)`, 'error');
+                statusMessage = `Tests completed with ${failedTests} failure(s)`;
+                statusType = 'error';
             }
             
+            showStatus(statusMessage, statusType);
             renderResults(message.results, message.workspaceType);
+            
+            // Save state for persistence
+            vscode.setState({
+                status: { message: statusMessage, type: statusType },
+                results: message.results,
+                workspaceType: message.workspaceType
+            });
             break;
             
         case 'testError':
             button.disabled = false;
-            showStatus('Error: ' + message.error, 'error');
+            const errorMessage = 'Error: ' + message.error;
+            showStatus(errorMessage, 'error');
+            // Save state
+            vscode.setState({
+                status: { message: errorMessage, type: 'error' }
+            });
             break;
+    }
+});
+
+// Restore previous state when webview is reopened
+window.addEventListener('DOMContentLoaded', () => {
+    const previousState = vscode.getState();
+    if (previousState) {
+        if (previousState.status) {
+            showStatus(previousState.status.message, previousState.status.type);
+        }
+        if (previousState.results) {
+            renderResults(previousState.results, previousState.workspaceType);
+        }
+        if (previousState.error) {
+            const button = document.getElementById('runTestsBtn');
+            button.disabled = true;
+            const resultsEl = document.getElementById('results');
+            resultsEl.innerHTML = `<div class="no-results">${escapeHtml(previousState.error)}</div>`;
+        }
     }
 });
 
