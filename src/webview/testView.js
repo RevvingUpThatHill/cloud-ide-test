@@ -29,7 +29,7 @@ function renderTests() {
     
     // Store scroll position and find topmost visible test before re-rendering
     let topmostTestName = null;
-    let testAbsolutePosition = 0; // Position in document, not viewport
+    let testViewportOffset = 0; // Position relative to viewport top (stays constant after render)
     const scrollTop = window.scrollY || document.documentElement.scrollTop;
     
     console.log(`Current scroll position: ${scrollTop}px`);
@@ -43,9 +43,9 @@ function renderTests() {
             const nameEl = item.querySelector('.test-name');
             if (nameEl) {
                 topmostTestName = nameEl.textContent;
-                // Calculate absolute position in document: scroll position + viewport position
-                testAbsolutePosition = scrollTop + rect.top;
-                console.log(`Found topmost visible test: "${topmostTestName}" at viewport ${rect.top}px, absolute ${testAbsolutePosition}px`);
+                // Store viewport position (distance from top of viewport)
+                testViewportOffset = rect.top;
+                console.log(`Found topmost visible test: "${topmostTestName}" at viewport offset ${testViewportOffset}px`);
                 break;
             }
         }
@@ -57,8 +57,8 @@ function renderTests() {
         if (firstNameEl) {
             topmostTestName = firstNameEl.textContent;
             const firstRect = testItems[0].getBoundingClientRect();
-            testAbsolutePosition = scrollTop + firstRect.top;
-            console.log(`Using fallback: first test "${topmostTestName}" at absolute ${testAbsolutePosition}px`);
+            testViewportOffset = firstRect.top;
+            console.log(`Using fallback: first test "${topmostTestName}" at viewport offset ${testViewportOffset}px`);
         }
     }
     
@@ -106,12 +106,12 @@ function renderTests() {
             console.log(`Comparing "${name}": previous="${previousTest.state}" current="${test.state}"`);
             if (previousTest.state !== test.state) {
                 // Status changed
-                if (previousTest.state === 'failed' && test.state === 'passed') {
+                if ((previousTest.state === 'failed' || previousTest.state === 'not-run') && test.state === 'passed') {
                     flashClass = 'status-improved';
-                    console.log(`✓ Test "${name}" improved: failed → passed (FLASHING GREEN)`);
-                } else if (previousTest.state === 'passed' && test.state === 'failed') {
+                    console.log(`✓ Test "${name}" improved: ${previousTest.state} → passed (FLASHING GREEN)`);
+                } else if ((previousTest.state === 'passed' || previousTest.state === 'not-run') && test.state === 'failed') {
                     flashClass = 'status-regressed';
-                    console.log(`✗ Test "${name}" regressed: passed → failed (FLASHING RED)`);
+                    console.log(`✗ Test "${name}" regressed: ${previousTest.state} → failed (FLASHING RED)`);
                 } else {
                     console.log(`  Status changed but no flash: ${previousTest.state} → ${test.state}`);
                 }
@@ -142,9 +142,9 @@ function renderTests() {
     
     resultsEl.innerHTML = html;
     
-    // Restore scroll position to maintain exact pixel position
+    // Restore scroll position to maintain same viewport offset for target test
     if (topmostTestName) {
-        console.log(`Attempting to restore: "${topmostTestName}" should be at absolute position ${testAbsolutePosition}px`);
+        console.log(`Attempting to restore: "${topmostTestName}" should be at viewport offset ${testViewportOffset}px`);
         
         // Use requestAnimationFrame twice to ensure DOM is fully rendered
         requestAnimationFrame(() => {
@@ -155,16 +155,18 @@ function renderTests() {
                 for (const item of testItems) {
                     const nameEl = item.querySelector('.test-name');
                     if (nameEl && nameEl.textContent === topmostTestName) {
-                        // Find where the test is now in the document
+                        // Find where the test is now in the viewport
                         const rect = item.getBoundingClientRect();
                         const currentScrollTop = window.scrollY || document.documentElement.scrollTop;
-                        const currentAbsolutePosition = currentScrollTop + rect.top;
                         
-                        // Calculate how much we need to scroll to restore the exact position
-                        const targetScrollTop = testAbsolutePosition - rect.top;
+                        // Calculate scroll needed to put test at same viewport offset
+                        // If test should be at viewport 176px, and it's currently at viewport 50px,
+                        // we need to scroll up by (50 - 176) = -126px
+                        const scrollDelta = rect.top - testViewportOffset;
+                        const targetScrollTop = currentScrollTop + scrollDelta;
                         
-                        console.log(`Test "${topmostTestName}" is currently at absolute ${currentAbsolutePosition}px, target ${testAbsolutePosition}px`);
-                        console.log(`Setting scroll to ${targetScrollTop}px (current: ${currentScrollTop}px, delta: ${targetScrollTop - currentScrollTop}px)`);
+                        console.log(`Test "${topmostTestName}" is at viewport ${rect.top}px, target viewport ${testViewportOffset}px`);
+                        console.log(`Setting scroll to ${targetScrollTop}px (current: ${currentScrollTop}px, delta: ${scrollDelta}px)`);
                         
                         window.scrollTo({
                             top: targetScrollTop,
@@ -175,8 +177,7 @@ function renderTests() {
                         setTimeout(() => {
                             const finalScrollTop = window.scrollY || document.documentElement.scrollTop;
                             const finalRect = item.getBoundingClientRect();
-                            const finalAbsolutePosition = finalScrollTop + finalRect.top;
-                            console.log(`✓ Scroll restored: ${finalScrollTop}px, test now at absolute ${finalAbsolutePosition}px (target was ${testAbsolutePosition}px, diff: ${Math.abs(finalAbsolutePosition - testAbsolutePosition)}px)`);
+                            console.log(`✓ Scroll restored: ${finalScrollTop}px, test now at viewport ${finalRect.top}px (target was ${testViewportOffset}px, diff: ${Math.abs(finalRect.top - testViewportOffset).toFixed(2)}px)`);
                         }, 0);
                         break;
                     }
@@ -265,9 +266,17 @@ window.addEventListener('message', event => {
                 });
             });
             renderTests();
+            
+            // Save initial "not-run" state so first test run can flash
+            previousTestStates = new Map();
+            testStates.forEach((value, key) => {
+                previousTestStates.set(key, { state: value.state });
+            });
+            
             // Save state
             vscode.setState({
-                testStates: Array.from(testStates.entries())
+                testStates: Array.from(testStates.entries()),
+                previousTestStates: Array.from(previousTestStates.entries())
             });
             break;
             
