@@ -167,8 +167,8 @@ window.addEventListener('message', event => {
                 statusMessage = `Tests completed successfully! (${totalTests} tests)`;
                 statusType = 'success';
             } else {
-                statusMessage = `Tests completed with ${failedTests} failure(s)`;
-                statusType = 'error';
+                statusMessage = `Tests completed: ${failedTests} failed, ${totalTests - failedTests} passed`;
+                statusType = 'info';
             }
             
             showStatus(statusMessage, statusType);

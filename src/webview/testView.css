@@ -59,6 +59,12 @@ button:disabled {
     color: var(--vscode-testing-iconPassed);
 }
 
+.status.info {
+    background-color: var(--vscode-inputValidation-infoBackground);
+    border-color: var(--vscode-inputValidation-infoBorder);
+    color: var(--vscode-foreground);
+}
+
 .status.error {
     background-color: var(--vscode-inputValidation-errorBackground);
     border-color: var(--vscode-inputValidation-errorBorder);
