@@ -11,7 +11,8 @@ export class PythonTestAdapter implements TestAdapter {
     async runTests(directory: string): Promise<TestResult> {
         try {
             // Run Python unittest first (built-in), fall back to pytest if available
-            const command = 'python3 -m unittest discover -v || python3 -m pytest --verbose --junit-xml=test-results.xml';
+            // Discovery starts in src/test folder and matches any .py file containing "test"
+            const command = 'python3 -m unittest discover -s src/test -p "*test*.py" -v || python3 -m pytest src/test --verbose --junit-xml=test-results.xml';
             const { stdout, stderr } = await execAsync(command, {
                 cwd: directory,
                 maxBuffer: 10 * 1024 * 1024 // 10MB buffer

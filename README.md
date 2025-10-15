@@ -70,6 +70,8 @@ A multi-language testing extension for Visual Studio Code that supports Java (Ma
 
 ### Python Projects
 - Python 3 installed and available in PATH as `python3`
+- Test files must be located in `src/test` folder
+- Test files must contain "test" in the filename (e.g., `test_example.py`, `example_test.py`, `my_tests.py`)
 - Tests following unittest conventions (built-in, no additional dependencies)
 - Optional: pytest (will be used as fallback if unittest is not available)
 
