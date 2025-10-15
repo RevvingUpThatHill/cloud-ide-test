@@ -154,43 +154,39 @@ function renderTests(options = {}) {
     if (topmostTestName && !options.skipScrollPreservation) {
         console.log(`Attempting to restore: "${topmostTestName}" should be at viewport offset ${testViewportOffset}px`);
         
-        // Use requestAnimationFrame twice to ensure DOM is fully rendered
+        // Use single requestAnimationFrame for faster restoration
         requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-                const testItems = resultsEl.querySelectorAll('.test-item');
-                console.log(`Found ${testItems.length} test items after render`);
-                
-                for (const item of testItems) {
-                    const nameEl = item.querySelector('.test-name');
-                    if (nameEl && nameEl.textContent === topmostTestName) {
-                        // Find where the test is now in the viewport
-                        const rect = item.getBoundingClientRect();
-                        const currentScrollTop = window.scrollY || document.documentElement.scrollTop;
-                        
-                        // Calculate scroll needed to put test at same viewport offset
-                        // If test should be at viewport 176px, and it's currently at viewport 50px,
-                        // we need to scroll up by (50 - 176) = -126px
-                        const scrollDelta = rect.top - testViewportOffset;
-                        const targetScrollTop = currentScrollTop + scrollDelta;
-                        
-                        console.log(`Test "${topmostTestName}" is at viewport ${rect.top}px, target viewport ${testViewportOffset}px`);
-                        console.log(`Setting scroll to ${targetScrollTop}px (current: ${currentScrollTop}px, delta: ${scrollDelta}px)`);
-                        
-                        window.scrollTo({
-                            top: targetScrollTop,
-                            behavior: 'instant'
-                        });
-                        
-                        // Verify
-                        setTimeout(() => {
-                            const finalScrollTop = window.scrollY || document.documentElement.scrollTop;
-                            const finalRect = item.getBoundingClientRect();
-                            console.log(`✓ Scroll restored: ${finalScrollTop}px, test now at viewport ${finalRect.top}px (target was ${testViewportOffset}px, diff: ${Math.abs(finalRect.top - testViewportOffset).toFixed(2)}px)`);
-                        }, 0);
-                        break;
-                    }
+            const testItems = resultsEl.querySelectorAll('.test-item');
+            console.log(`Found ${testItems.length} test items after render`);
+            
+            for (const item of testItems) {
+                const nameEl = item.querySelector('.test-name');
+                if (nameEl && nameEl.textContent === topmostTestName) {
+                    // Find where the test is now in the viewport
+                    const rect = item.getBoundingClientRect();
+                    const currentScrollTop = window.scrollY || document.documentElement.scrollTop;
+                    
+                    // Calculate scroll needed to put test at same viewport offset
+                    const scrollDelta = rect.top - testViewportOffset;
+                    const targetScrollTop = currentScrollTop + scrollDelta;
+                    
+                    console.log(`Test "${topmostTestName}" is at viewport ${rect.top}px, target viewport ${testViewportOffset}px`);
+                    console.log(`Setting scroll to ${targetScrollTop}px (current: ${currentScrollTop}px, delta: ${scrollDelta}px)`);
+                    
+                    window.scrollTo({
+                        top: targetScrollTop,
+                        behavior: 'instant'
+                    });
+                    
+                    // Verify
+                    setTimeout(() => {
+                        const finalScrollTop = window.scrollY || document.documentElement.scrollTop;
+                        const finalRect = item.getBoundingClientRect();
+                        console.log(`✓ Scroll restored: ${finalScrollTop}px, test now at viewport ${finalRect.top}px (target was ${testViewportOffset}px, diff: ${Math.abs(finalRect.top - testViewportOffset).toFixed(2)}px)`);
+                    }, 0);
+                    break;
                 }
-            });
+            }
         });
     }
 }
