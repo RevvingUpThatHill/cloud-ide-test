@@ -80,18 +80,18 @@ function renderTests(options = {}) {
     const error = Array.from(testStates.values()).filter(t => t.state === 'error').length;
     const skipped = Array.from(testStates.values()).filter(t => t.state === 'skipped').length;
     
-    // Determine flash animations for stats
+    // Determine flash animations for stats (only when values change)
     let passedFlash = '';
     let failedFlash = '';
     let errorFlash = '';
     
-    if (passed > previousStats.passed) {
-        passedFlash = 'stat-flash-green';
+    if (passed !== previousStats.passed && previousStats.passed !== undefined) {
+        passedFlash = passed > previousStats.passed ? 'stat-flash-green' : 'stat-flash-red';
     }
-    if (failed > previousStats.failed) {
+    if (failed !== previousStats.failed && previousStats.failed !== undefined) {
         failedFlash = 'stat-flash-red';
     }
-    if (error > previousStats.error) {
+    if (error !== previousStats.error && previousStats.error !== undefined) {
         errorFlash = 'stat-flash-red';
     }
     
