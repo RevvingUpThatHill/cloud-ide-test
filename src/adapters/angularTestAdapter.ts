@@ -8,6 +8,8 @@ import { TestAdapter, TestResult, TestCase, DiscoveredTest } from './testAdapter
 const execAsync = promisify(exec);
 
 export class AngularTestAdapter implements TestAdapter {
+    private discoveredTests: DiscoveredTest[] = [];
+
     async discoverTests(directory: string): Promise<DiscoveredTest[]> {
         const tests: DiscoveredTest[] = [];
         const srcDir = path.join(directory, 'src');
@@ -57,39 +59,58 @@ export class AngularTestAdapter implements TestAdapter {
             }
         }
 
+        // Store discovered tests for validation during test execution
+        this.discoveredTests = tests;
         return tests;
     }
 
     async runTests(directory: string): Promise<TestResult> {
+        // Check if angular.json or package.json exists
+        const angularJsonPath = path.join(directory, 'angular.json');
+        const packageJsonPath = path.join(directory, 'package.json');
+        
+        const hasAngularJson = fs.existsSync(angularJsonPath);
+        const hasPackageJson = fs.existsSync(packageJsonPath);
+
+        if (!hasAngularJson && !hasPackageJson) {
+            throw new Error('No angular.json or package.json found. This doesn\'t appear to be an Angular project.');
+        }
+
+        let stdout = '';
+        let stderr = '';
+        
         try {
-            // Check if angular.json or package.json exists
-            const angularJsonPath = path.join(directory, 'angular.json');
-            const packageJsonPath = path.join(directory, 'package.json');
-            
-            const hasAngularJson = fs.existsSync(angularJsonPath);
-            const hasPackageJson = fs.existsSync(packageJsonPath);
-
-            if (!hasAngularJson && !hasPackageJson) {
-                throw new Error('No angular.json or package.json found. This doesn\'t appear to be an Angular project.');
-            }
-
             // Run Karma tests in single-run mode
             const command = 'npm run test -- --watch=false --browsers=ChromeHeadless';
-            const { stdout, stderr } = await execAsync(command, {
+            const result = await execAsync(command, {
                 cwd: directory,
                 maxBuffer: 10 * 1024 * 1024, // 10MB buffer
                 env: { ...process.env, CI: 'true' } // Force CI mode for single run
             });
-
-            // Parse the test results
-            return this.parseTestOutput(stdout, stderr, directory);
+            stdout = result.stdout;
+            stderr = result.stderr;
         } catch (error: any) {
-            // Even if tests fail, output might contain results
-            if (error.stdout) {
-                return this.parseTestOutput(error.stdout, error.stderr || '', directory);
+            // Command failed (non-zero exit code) - this is NORMAL when tests fail
+            stdout = error.stdout || '';
+            stderr = error.stderr || '';
+            
+            if (!stdout && !stderr) {
+                throw new Error(`Failed to run Angular tests: ${error.message}`);
             }
-            throw error;
         }
+
+        // Always parse the output, whether tests passed or failed
+        const result = this.parseTestOutput(stdout, stderr, directory);
+        
+        // Validate: if we discovered tests but got no results, it's a real error
+        if (this.discoveredTests.length > 0 && result.tests.length === 0) {
+            throw new Error(
+                `Test execution failed: Discovered ${this.discoveredTests.length} tests but got no results. ` +
+                `This may indicate an Angular/Karma configuration issue or missing dependencies.`
+            );
+        }
+        
+        return result;
     }
 
     private parseTestOutput(stdout: string, stderr: string, directory: string): TestResult {

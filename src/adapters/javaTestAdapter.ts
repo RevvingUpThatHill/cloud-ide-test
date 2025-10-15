@@ -8,6 +8,8 @@ import { TestAdapter, TestResult, TestCase, DiscoveredTest } from './testAdapter
 const execAsync = promisify(exec);
 
 export class JavaTestAdapter implements TestAdapter {
+    private discoveredTests: DiscoveredTest[] = [];
+
     async discoverTests(directory: string): Promise<DiscoveredTest[]> {
         const tests: DiscoveredTest[] = [];
         const testDir = path.join(directory, 'src', 'test', 'java');
@@ -65,35 +67,54 @@ export class JavaTestAdapter implements TestAdapter {
             }
         }
 
+        // Store discovered tests for validation during test execution
+        this.discoveredTests = tests;
         return tests;
     }
 
     async runTests(directory: string): Promise<TestResult> {
+        // Check if pom.xml exists (Maven project)
+        const pomPath = path.join(directory, 'pom.xml');
+        const hasPom = fs.existsSync(pomPath);
+
+        if (!hasPom) {
+            throw new Error('No pom.xml found. This doesn\'t appear to be a Maven project.');
+        }
+
+        let stdout = '';
+        let stderr = '';
+        
         try {
-            // Check if pom.xml exists (Maven project)
-            const pomPath = path.join(directory, 'pom.xml');
-            const hasPom = fs.existsSync(pomPath);
-
-            if (!hasPom) {
-                throw new Error('No pom.xml found. This doesn\'t appear to be a Maven project.');
-            }
-
             // Run Maven tests
             const command = 'mvn test';
-            const { stdout, stderr } = await execAsync(command, {
+            const result = await execAsync(command, {
                 cwd: directory,
                 maxBuffer: 10 * 1024 * 1024 // 10MB buffer
             });
-
-            // Parse the test results
-            return this.parseTestOutput(stdout, stderr, directory);
+            stdout = result.stdout;
+            stderr = result.stderr;
         } catch (error: any) {
-            // Even if tests fail, Maven outputs results, so parse them
-            if (error.stdout) {
-                return this.parseTestOutput(error.stdout, error.stderr || '', directory);
+            // Command failed (non-zero exit code) - this is NORMAL when tests fail
+            stdout = error.stdout || '';
+            stderr = error.stderr || '';
+            
+            if (!stdout && !stderr) {
+                throw new Error(`Failed to run Maven tests: ${error.message}`);
             }
-            throw error;
         }
+
+        // Always parse the output, whether tests passed or failed
+        const result = this.parseTestOutput(stdout, stderr, directory);
+        
+        // Validate: if we discovered tests but got no results, it's a real error
+        if (this.discoveredTests.length > 0 && result.tests.length === 0) {
+            throw new Error(
+                `Test execution failed: Discovered ${this.discoveredTests.length} tests but got no results. ` +
+                `This may indicate a Maven configuration issue or missing dependencies.`
+            );
+        }
+        
+        return result;
     }
 
     private parseTestOutput(stdout: string, stderr: string, directory: string): TestResult {

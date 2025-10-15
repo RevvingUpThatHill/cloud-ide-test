@@ -8,6 +8,8 @@ import { TestAdapter, TestResult, TestCase, DiscoveredTest } from './testAdapter
 const execAsync = promisify(exec);
 
 export class PythonTestAdapter implements TestAdapter {
+    private discoveredTests: DiscoveredTest[] = [];
+
     async discoverTests(directory: string): Promise<DiscoveredTest[]> {
         const tests: DiscoveredTest[] = [];
         const testDir = path.join(directory, 'src', 'test');
@@ -59,29 +61,49 @@ export class PythonTestAdapter implements TestAdapter {
             }
         }
 
+        // Store discovered tests for validation during test execution
+        this.discoveredTests = tests;
         return tests;
     }
 
     async runTests(directory: string): Promise<TestResult> {
+        let stdout = '';
+        let stderr = '';
+        
         try {
             // Run Python unittest first (built-in), fall back to pytest if available
             // Discovery starts in src/test folder and matches any .py file containing "test"
             const command = 'python3 -m unittest discover -s src/test -p "*test*.py" -v || python3 -m pytest src/test --verbose --junit-xml=test-results.xml';
-            const { stdout, stderr } = await execAsync(command, {
+            const result = await execAsync(command, {
                 cwd: directory,
                 maxBuffer: 10 * 1024 * 1024 // 10MB buffer
             });
-
-            // Parse the test results
-            return this.parseTestOutput(stdout, stderr, directory);
+            stdout = result.stdout;
+            stderr = result.stderr;
         } catch (error: any) {
-            // Even if tests fail, output might contain results
-            if (error.stdout || error.stderr) {
-                return this.parseTestOutput(error.stdout || '', error.stderr || '', directory);
+            // Command failed (non-zero exit code) - this is NORMAL when tests fail
+            // Capture the output anyway
+            stdout = error.stdout || '';
+            stderr = error.stderr || '';
+            
+            // Only throw if there's truly no output (command not found, etc.)
+            if (!stdout && !stderr) {
+                throw new Error(`Failed to run tests: ${error.message}`);
             }
-            // If no output at all, it's a real error (e.g., command not found)
-            throw new Error(`Failed to run tests: ${error.message}`);
         }
+        
+        // Always parse the output, whether tests passed or failed
+        const result = this.parseTestOutput(stdout, stderr, directory);
+        
+        // Validate: if we discovered tests but got no results, it's a real error
+        if (this.discoveredTests.length > 0 && result.tests.length === 0) {
+            throw new Error(
+                `Test execution failed: Discovered ${this.discoveredTests.length} tests but got no results. ` +
+                `This may indicate a Python environment issue or missing test dependencies.`
+            );
+        }
+        
+        return result;
     }
 
     private parseTestOutput(stdout: string, stderr: string, directory: string): TestResult {
