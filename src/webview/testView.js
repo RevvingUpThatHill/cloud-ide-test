@@ -3,6 +3,7 @@ const vscode = acquireVsCodeApi();
 // Store test states
 let testStates = new Map(); // testName -> { state, message, duration, expected, actual, errorType }
 let previousTestStates = new Map(); // Store previous run results to detect changes
+let scrollAnchor = null; // { testName: string, viewportOffset: number } - captured before running
 
 function runTests() {
     vscode.postMessage({ type: 'runTests' });
@@ -19,7 +20,7 @@ function hideStatus() {
     document.getElementById('status').style.display = 'none';
 }
 
-function renderTests() {
+function renderTests(options = {}) {
     const resultsEl = document.getElementById('results');
     
     if (testStates.size === 0) {
@@ -32,33 +33,40 @@ function renderTests() {
     let testViewportOffset = 0; // Position relative to viewport top (stays constant after render)
     const scrollTop = window.scrollY || document.documentElement.scrollTop;
     
-    console.log(`Current scroll position: ${scrollTop}px`);
-    
-    // Find which test is currently at the top of the viewport
-    const testItems = resultsEl.querySelectorAll('.test-item');
-    for (const item of testItems) {
-        const rect = item.getBoundingClientRect();
-        // Check if this test is visible in viewport (accounting for sticky header ~60px)
-        if (rect.top >= 50 && rect.top <= window.innerHeight) {
-            const nameEl = item.querySelector('.test-name');
-            if (nameEl) {
-                topmostTestName = nameEl.textContent;
-                // Store viewport position (distance from top of viewport)
-                testViewportOffset = rect.top;
-                console.log(`Found topmost visible test: "${topmostTestName}" at viewport offset ${testViewportOffset}px`);
-                break;
+    // Use saved scroll anchor if provided, otherwise capture current position
+    if (options.useScrollAnchor && scrollAnchor) {
+        topmostTestName = scrollAnchor.testName;
+        testViewportOffset = scrollAnchor.viewportOffset;
+        console.log(`Using saved scroll anchor: "${topmostTestName}" at viewport offset ${testViewportOffset}px`);
+    } else if (!options.skipScrollPreservation) {
+        console.log(`Current scroll position: ${scrollTop}px`);
+        
+        // Find which test is currently at the top of the viewport
+        const testItems = resultsEl.querySelectorAll('.test-item');
+        for (const item of testItems) {
+            const rect = item.getBoundingClientRect();
+            // Check if this test is visible in viewport (accounting for sticky header ~60px)
+            if (rect.top >= 50 && rect.top <= window.innerHeight) {
+                const nameEl = item.querySelector('.test-name');
+                if (nameEl) {
+                    topmostTestName = nameEl.textContent;
+                    // Store viewport position (distance from top of viewport)
+                    testViewportOffset = rect.top;
+                    console.log(`Found topmost visible test: "${topmostTestName}" at viewport offset ${testViewportOffset}px`);
+                    break;
+                }
             }
         }
-    }
-    
-    if (!topmostTestName && testItems.length > 0) {
-        // Fallback: use first test if nothing found
-        const firstNameEl = testItems[0].querySelector('.test-name');
-        if (firstNameEl) {
-            topmostTestName = firstNameEl.textContent;
-            const firstRect = testItems[0].getBoundingClientRect();
-            testViewportOffset = firstRect.top;
-            console.log(`Using fallback: first test "${topmostTestName}" at viewport offset ${testViewportOffset}px`);
+        
+        if (!topmostTestName && testItems.length > 0) {
+            // Fallback: use first test if nothing found
+            const firstNameEl = testItems[0].querySelector('.test-name');
+            if (firstNameEl) {
+                topmostTestName = firstNameEl.textContent;
+                const firstRect = testItems[0].getBoundingClientRect();
+                testViewportOffset = firstRect.top;
+                console.log(`Using fallback: first test "${topmostTestName}" at viewport offset ${testViewportOffset}px`);
+            }
         }
     }
     
@@ -143,7 +151,7 @@ function renderTests() {
     resultsEl.innerHTML = html;
     
     // Restore scroll position to maintain same viewport offset for target test
-    if (topmostTestName) {
+    if (topmostTestName && !options.skipScrollPreservation) {
         console.log(`Attempting to restore: "${topmostTestName}" should be at viewport offset ${testViewportOffset}px`);
         
         // Use requestAnimationFrame twice to ensure DOM is fully rendered
@@ -235,7 +243,11 @@ function renderResults(results, workspaceType) {
         console.log(`  "${key}": state="${value.state}"`);
     });
     
-    renderTests();
+    // Render with saved scroll anchor to avoid jumps
+    renderTests({ useScrollAnchor: true });
+    
+    // Clear scroll anchor after use
+    scrollAnchor = null;
     
     // Store current states as previous states for next run
     previousTestStates = new Map();
@@ -303,11 +315,33 @@ window.addEventListener('message', event => {
         case 'testRunning':
             button.disabled = true;
             hideStatus(); // Don't show status message while running
+            
+            // Capture scroll position BEFORE changing to running state
+            const scrollTop = window.scrollY || document.documentElement.scrollTop;
+            if (scrollTop > 0) {
+                const resultsEl = document.getElementById('results');
+                const testItems = resultsEl.querySelectorAll('.test-item');
+                for (const item of testItems) {
+                    const rect = item.getBoundingClientRect();
+                    if (rect.top >= 50 && rect.top <= window.innerHeight) {
+                        const nameEl = item.querySelector('.test-name');
+                        if (nameEl) {
+                            scrollAnchor = {
+                                testName: nameEl.textContent,
+                                viewportOffset: rect.top
+                            };
+                            console.log(`Captured scroll anchor before running: "${scrollAnchor.testName}" at ${scrollAnchor.viewportOffset}px`);
+                            break;
+                        }
+                    }
+                }
+            }
+            
             // Set all tests to running state
             testStates.forEach((test, name) => {
                 test.state = 'running';
             });
-            renderTests();
+            renderTests({ skipScrollPreservation: true }); // Don't preserve during transition to yellow
             break;
             
         case 'testResults':
