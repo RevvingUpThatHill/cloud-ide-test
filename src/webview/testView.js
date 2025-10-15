@@ -341,7 +341,7 @@ window.addEventListener('message', event => {
             testStates.forEach((test, name) => {
                 test.state = 'running';
             });
-            renderTests({ skipScrollPreservation: true }); // Don't preserve during transition to yellow
+            renderTests({ useScrollAnchor: true }); // Use captured anchor to avoid shift
             break;
             
         case 'testResults':
