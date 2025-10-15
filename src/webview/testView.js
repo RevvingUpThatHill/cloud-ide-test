@@ -61,6 +61,7 @@ function renderTests() {
     
     testStates.forEach((test, name) => {
         const stateClass = test.state || 'not-run';
+        console.log(`Rendering test "${name}" with state "${test.state}" (class: test-${stateClass})`);
         html += `
             <div class="test-item test-${stateClass}">
                 <div class="test-name">${escapeHtml(name)}</div>
@@ -85,8 +86,13 @@ function renderTests() {
 
 function renderResults(results, workspaceType) {
     // Update test states based on results
+    console.log('Updating test states with results:', results.tests.length, 'tests');
+    console.log('Current test states:', Array.from(testStates.keys()));
+    console.log('Result test names:', results.tests.map(t => t.name));
+    
     results.tests.forEach(test => {
         const state = testStates.get(test.name) || {};
+        console.log(`Updating test "${test.name}" with status "${test.status}"`);
         state.state = test.status;
         state.duration = test.duration;
         state.message = test.message;
@@ -96,6 +102,7 @@ function renderResults(results, workspaceType) {
         testStates.set(test.name, state);
     });
     
+    console.log('Updated test states:', Array.from(testStates.entries()));
     renderTests();
 }
 
@@ -159,24 +166,11 @@ window.addEventListener('message', event => {
             
         case 'testResults':
             button.disabled = false;
-            const totalTests = message.results.tests.length;
-            const failedTests = message.results.tests.filter(t => t.status === 'failed').length;
-            
-            let statusMessage, statusType;
-            if (failedTests === 0) {
-                statusMessage = `Tests completed successfully! (${totalTests} tests)`;
-                statusType = 'success';
-            } else {
-                statusMessage = `Tests completed: ${failedTests} failed, ${totalTests - failedTests} passed`;
-                statusType = 'info';
-            }
-            
-            showStatus(statusMessage, statusType);
+            hideStatus();
             renderResults(message.results, message.workspaceType);
             
             // Save state for persistence
             vscode.setState({
-                status: { message: statusMessage, type: statusType },
                 testStates: Array.from(testStates.entries()),
                 workspaceType: message.workspaceType
             });
@@ -204,7 +198,8 @@ window.addEventListener('DOMContentLoaded', () => {
             testStates = new Map(previousState.testStates);
             renderTests();
         }
-        if (previousState.status) {
+        // Only show status if it's a warning or error, not from completed tests
+        if (previousState.status && (previousState.status.type === 'warning' || previousState.status.type === 'error')) {
             showStatus(previousState.status.message, previousState.status.type);
         }
         if (previousState.error) {
