@@ -203,15 +203,9 @@ button:disabled {
 @keyframes flash-green {
     0% {
         background-color: var(--vscode-editor-background);
-    }
-    25% {
-        background-color: rgba(115, 201, 145, 0.6);
-        transform: scale(1.02);
+        transform: scale(1);
     }
     50% {
-        background-color: var(--vscode-editor-background);
-    }
-    75% {
         background-color: rgba(115, 201, 145, 0.6);
         transform: scale(1.02);
     }
@@ -224,15 +218,9 @@ button:disabled {
 @keyframes flash-red {
     0% {
         background-color: var(--vscode-editor-background);
-    }
-    25% {
-        background-color: rgba(211, 47, 47, 0.6);
-        transform: scale(1.02);
+        transform: scale(1);
     }
     50% {
-        background-color: var(--vscode-editor-background);
-    }
-    75% {
         background-color: rgba(211, 47, 47, 0.6);
         transform: scale(1.02);
     }
@@ -243,11 +231,11 @@ button:disabled {
 }
 
 .test-item.status-improved {
-    animation: flash-green 1.5s ease-in-out;
+    animation: flash-green 1s ease-in-out;
 }
 
 .test-item.status-regressed {
-    animation: flash-red 1.5s ease-in-out;
+    animation: flash-red 1s ease-in-out;
 }
 
 .test-name {

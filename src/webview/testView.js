@@ -29,19 +29,36 @@ function renderTests() {
     
     // Store scroll position and find topmost visible test before re-rendering
     let topmostTestName = null;
-    const scrollTop = document.documentElement.scrollTop || document.body.scrollTop;
+    let testAbsolutePosition = 0; // Position in document, not viewport
+    const scrollTop = window.scrollY || document.documentElement.scrollTop;
+    
+    console.log(`Current scroll position: ${scrollTop}px`);
     
     // Find which test is currently at the top of the viewport
     const testItems = resultsEl.querySelectorAll('.test-item');
     for (const item of testItems) {
         const rect = item.getBoundingClientRect();
-        // Check if this test is visible in viewport (accounting for sticky header)
-        if (rect.top >= 60 && rect.bottom > 60) {
+        // Check if this test is visible in viewport (accounting for sticky header ~60px)
+        if (rect.top >= 50 && rect.top <= window.innerHeight) {
             const nameEl = item.querySelector('.test-name');
             if (nameEl) {
                 topmostTestName = nameEl.textContent;
+                // Calculate absolute position in document: scroll position + viewport position
+                testAbsolutePosition = scrollTop + rect.top;
+                console.log(`Found topmost visible test: "${topmostTestName}" at viewport ${rect.top}px, absolute ${testAbsolutePosition}px`);
                 break;
             }
+        }
+    }
+    
+    if (!topmostTestName && testItems.length > 0) {
+        // Fallback: use first test if nothing found
+        const firstNameEl = testItems[0].querySelector('.test-name');
+        if (firstNameEl) {
+            topmostTestName = firstNameEl.textContent;
+            const firstRect = testItems[0].getBoundingClientRect();
+            testAbsolutePosition = scrollTop + firstRect.top;
+            console.log(`Using fallback: first test "${topmostTestName}" at absolute ${testAbsolutePosition}px`);
         }
     }
     
@@ -125,25 +142,46 @@ function renderTests() {
     
     resultsEl.innerHTML = html;
     
-    // Restore scroll position to the same test if it was visible before
+    // Restore scroll position to maintain exact pixel position
     if (topmostTestName) {
-        // Use requestAnimationFrame to ensure DOM is updated
+        console.log(`Attempting to restore: "${topmostTestName}" should be at absolute position ${testAbsolutePosition}px`);
+        
+        // Use requestAnimationFrame twice to ensure DOM is fully rendered
         requestAnimationFrame(() => {
-            const testItems = resultsEl.querySelectorAll('.test-item');
-            for (const item of testItems) {
-                const nameEl = item.querySelector('.test-name');
-                if (nameEl && nameEl.textContent === topmostTestName) {
-                    // Calculate scroll position to put this test at the same spot
-                    const rect = item.getBoundingClientRect();
-                    const currentTop = rect.top;
-                    const desiredTop = 60; // Account for sticky header
-                    const scrollAdjustment = currentTop - desiredTop;
-                    
-                    window.scrollBy(0, scrollAdjustment);
-                    console.log(`Restored scroll to test: "${topmostTestName}"`);
-                    break;
+            requestAnimationFrame(() => {
+                const testItems = resultsEl.querySelectorAll('.test-item');
+                console.log(`Found ${testItems.length} test items after render`);
+                
+                for (const item of testItems) {
+                    const nameEl = item.querySelector('.test-name');
+                    if (nameEl && nameEl.textContent === topmostTestName) {
+                        // Find where the test is now in the document
+                        const rect = item.getBoundingClientRect();
+                        const currentScrollTop = window.scrollY || document.documentElement.scrollTop;
+                        const currentAbsolutePosition = currentScrollTop + rect.top;
+                        
+                        // Calculate how much we need to scroll to restore the exact position
+                        const targetScrollTop = testAbsolutePosition - rect.top;
+                        
+                        console.log(`Test "${topmostTestName}" is currently at absolute ${currentAbsolutePosition}px, target ${testAbsolutePosition}px`);
+                        console.log(`Setting scroll to ${targetScrollTop}px (current: ${currentScrollTop}px, delta: ${targetScrollTop - currentScrollTop}px)`);
+                        
+                        window.scrollTo({
+                            top: targetScrollTop,
+                            behavior: 'instant'
+                        });
+                        
+                        // Verify
+                        setTimeout(() => {
+                            const finalScrollTop = window.scrollY || document.documentElement.scrollTop;
+                            const finalRect = item.getBoundingClientRect();
+                            const finalAbsolutePosition = finalScrollTop + finalRect.top;
+                            console.log(`✓ Scroll restored: ${finalScrollTop}px, test now at absolute ${finalAbsolutePosition}px (target was ${testAbsolutePosition}px, diff: ${Math.abs(finalAbsolutePosition - testAbsolutePosition)}px)`);
+                        }, 0);
+                        break;
+                    }
                 }
-            }
+            });
         });
     }
 }
