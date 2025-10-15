@@ -2,6 +2,7 @@ const vscode = acquireVsCodeApi();
 
 // Store test states
 let testStates = new Map(); // testName -> { state, message, duration, expected, actual, errorType }
+let previousTestStates = new Map(); // Store previous run results to detect changes
 
 function runTests() {
     vscode.postMessage({ type: 'runTests' });
@@ -62,9 +63,24 @@ function renderTests() {
     testStates.forEach((test, name) => {
         const stateClass = test.state || 'not-run';
         const displayState = test.state || 'not run';
-        console.log(`Rendering test "${name}" with state "${test.state}" (class: test-${stateClass})`);
+        
+        // Check if status changed from previous run
+        let flashClass = '';
+        const previousTest = previousTestStates.get(name);
+        if (previousTest && previousTest.state !== test.state) {
+            // Status changed
+            if (previousTest.state === 'failed' && test.state === 'passed') {
+                flashClass = 'status-improved';
+                console.log(`✓ Test "${name}" improved: failed → passed (flashing green)`);
+            } else if (previousTest.state === 'passed' && test.state === 'failed') {
+                flashClass = 'status-regressed';
+                console.log(`✗ Test "${name}" regressed: passed → failed (flashing red)`);
+            }
+        }
+        
+        console.log(`Rendering test "${name}" with state "${test.state}" (class: test-${stateClass} ${flashClass})`);
         html += `
-            <div class="test-item test-${stateClass}">
+            <div class="test-item test-${stateClass} ${flashClass}">
                 <div class="test-name">${escapeHtml(name)}</div>
                 <div class="test-status">${displayState}</div>
                 ${test.duration ? `<div class="test-duration">Duration: ${test.duration}ms</div>` : ''}
@@ -134,6 +150,12 @@ function renderResults(results, workspaceType) {
     });
     
     renderTests();
+    
+    // Store current states as previous states for next run
+    previousTestStates = new Map();
+    testStates.forEach((value, key) => {
+        previousTestStates.set(key, { state: value.state });
+    });
 }
 
 function escapeHtml(text) {
@@ -186,7 +208,7 @@ window.addEventListener('message', event => {
             
         case 'testRunning':
             button.disabled = true;
-            showStatus('Running tests...', 'running');
+            hideStatus(); // Don't show status message while running
             // Set all tests to running state
             testStates.forEach((test, name) => {
                 test.state = 'running';
@@ -202,6 +224,7 @@ window.addEventListener('message', event => {
             // Save state for persistence
             vscode.setState({
                 testStates: Array.from(testStates.entries()),
+                previousTestStates: Array.from(previousTestStates.entries()),
                 workspaceType: message.workspaceType
             });
             break;
@@ -227,6 +250,10 @@ window.addEventListener('DOMContentLoaded', () => {
             // Restore test states from saved array
             testStates = new Map(previousState.testStates);
             renderTests();
+        }
+        if (previousState.previousTestStates) {
+            // Restore previous test states for change detection
+            previousTestStates = new Map(previousState.previousTestStates);
         }
         // Only show status if it's a warning or error, not from completed tests
         if (previousState.status && (previousState.status.type === 'warning' || previousState.status.type === 'error')) {
