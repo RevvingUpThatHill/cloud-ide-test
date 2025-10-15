@@ -27,6 +27,24 @@ function renderTests() {
         return;
     }
     
+    // Store scroll position and find topmost visible test before re-rendering
+    let topmostTestName = null;
+    const scrollTop = document.documentElement.scrollTop || document.body.scrollTop;
+    
+    // Find which test is currently at the top of the viewport
+    const testItems = resultsEl.querySelectorAll('.test-item');
+    for (const item of testItems) {
+        const rect = item.getBoundingClientRect();
+        // Check if this test is visible in viewport (accounting for sticky header)
+        if (rect.top >= 60 && rect.bottom > 60) {
+            const nameEl = item.querySelector('.test-name');
+            if (nameEl) {
+                topmostTestName = nameEl.textContent;
+                break;
+            }
+        }
+    }
+    
     // Calculate stats
     const total = testStates.size;
     const notRun = Array.from(testStates.values()).filter(t => t.state === 'not-run').length;
@@ -99,6 +117,28 @@ function renderTests() {
     });
     
     resultsEl.innerHTML = html;
+    
+    // Restore scroll position to the same test if it was visible before
+    if (topmostTestName) {
+        // Use requestAnimationFrame to ensure DOM is updated
+        requestAnimationFrame(() => {
+            const testItems = resultsEl.querySelectorAll('.test-item');
+            for (const item of testItems) {
+                const nameEl = item.querySelector('.test-name');
+                if (nameEl && nameEl.textContent === topmostTestName) {
+                    // Calculate scroll position to put this test at the same spot
+                    const rect = item.getBoundingClientRect();
+                    const currentTop = rect.top;
+                    const desiredTop = 60; // Account for sticky header
+                    const scrollAdjustment = currentTop - desiredTop;
+                    
+                    window.scrollBy(0, scrollAdjustment);
+                    console.log(`Restored scroll to test: "${topmostTestName}"`);
+                    break;
+                }
+            }
+        });
+    }
 }
 
 function renderResults(results, workspaceType) {
