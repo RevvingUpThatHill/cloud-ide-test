@@ -69,7 +69,7 @@ A multi-language testing extension for Visual Studio Code that supports Java (Ma
 - `test` script in package.json
 
 ### Python Projects
-- Python 3 installed and available in PATH
+- Python 3 installed and available in PATH as `python3`
 - Tests following unittest conventions
 - Optional: pytest for enhanced reporting
 

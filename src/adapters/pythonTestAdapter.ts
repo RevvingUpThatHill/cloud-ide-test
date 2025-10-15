@@ -11,7 +11,7 @@ export class PythonTestAdapter implements TestAdapter {
     async runTests(directory: string): Promise<TestResult> {
         try {
             // Run Python unittest with verbose output and XML reporting
-            const command = 'python -m pytest --verbose --junit-xml=test-results.xml || python -m unittest discover -v';
+            const command = 'python3 -m pytest --verbose --junit-xml=test-results.xml || python3 -m unittest discover -v';
             const { stdout, stderr } = await execAsync(command, {
                 cwd: directory,
                 maxBuffer: 10 * 1024 * 1024 // 10MB buffer
