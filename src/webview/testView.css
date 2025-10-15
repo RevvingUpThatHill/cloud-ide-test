@@ -201,29 +201,53 @@ button:disabled {
 
 /* Flash animations for status changes */
 @keyframes flash-green {
-    0%, 100% {
+    0% {
         background-color: var(--vscode-editor-background);
     }
+    25% {
+        background-color: rgba(115, 201, 145, 0.6);
+        transform: scale(1.02);
+    }
     50% {
-        background-color: rgba(115, 201, 145, 0.3);
+        background-color: var(--vscode-editor-background);
+    }
+    75% {
+        background-color: rgba(115, 201, 145, 0.6);
+        transform: scale(1.02);
+    }
+    100% {
+        background-color: var(--vscode-editor-background);
+        transform: scale(1);
     }
 }
 
 @keyframes flash-red {
-    0%, 100% {
+    0% {
         background-color: var(--vscode-editor-background);
     }
+    25% {
+        background-color: rgba(211, 47, 47, 0.6);
+        transform: scale(1.02);
+    }
     50% {
-        background-color: rgba(211, 47, 47, 0.3);
+        background-color: var(--vscode-editor-background);
+    }
+    75% {
+        background-color: rgba(211, 47, 47, 0.6);
+        transform: scale(1.02);
+    }
+    100% {
+        background-color: var(--vscode-editor-background);
+        transform: scale(1);
     }
 }
 
 .test-item.status-improved {
-    animation: flash-green 1s ease-in-out 2;
+    animation: flash-green 1.5s ease-in-out;
 }
 
 .test-item.status-regressed {
-    animation: flash-red 1s ease-in-out 2;
+    animation: flash-red 1.5s ease-in-out;
 }
 
 .test-name {

@@ -85,15 +85,22 @@ function renderTests() {
         // Check if status changed from previous run
         let flashClass = '';
         const previousTest = previousTestStates.get(name);
-        if (previousTest && previousTest.state !== test.state) {
-            // Status changed
-            if (previousTest.state === 'failed' && test.state === 'passed') {
-                flashClass = 'status-improved';
-                console.log(`✓ Test "${name}" improved: failed → passed (flashing green)`);
-            } else if (previousTest.state === 'passed' && test.state === 'failed') {
-                flashClass = 'status-regressed';
-                console.log(`✗ Test "${name}" regressed: passed → failed (flashing red)`);
+        if (previousTest) {
+            console.log(`Comparing "${name}": previous="${previousTest.state}" current="${test.state}"`);
+            if (previousTest.state !== test.state) {
+                // Status changed
+                if (previousTest.state === 'failed' && test.state === 'passed') {
+                    flashClass = 'status-improved';
+                    console.log(`✓ Test "${name}" improved: failed → passed (FLASHING GREEN)`);
+                } else if (previousTest.state === 'passed' && test.state === 'failed') {
+                    flashClass = 'status-regressed';
+                    console.log(`✗ Test "${name}" regressed: passed → failed (FLASHING RED)`);
+                } else {
+                    console.log(`  Status changed but no flash: ${previousTest.state} → ${test.state}`);
+                }
             }
+        } else {
+            console.log(`No previous state for "${name}"`);
         }
         
         console.log(`Rendering test "${name}" with state "${test.state}" (class: test-${stateClass} ${flashClass})`);
