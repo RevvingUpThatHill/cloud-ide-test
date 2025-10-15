@@ -70,6 +70,11 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
             }, 100);
         }
 
+        // Discover and display tests on load
+        setTimeout(() => {
+            this.discoverAndDisplayTests();
+        }, 200);
+
         // Handle messages from the webview
         webviewView.webview.onDidReceiveMessage(async (data) => {
             switch (data.type) {
@@ -80,13 +85,34 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
         });
     }
 
-    public async runTests() {
+    private async discoverAndDisplayTests() {
         if (!this._view) {
-            vscode.window.showErrorMessage('Test view not initialized');
             return;
         }
 
-        // Get the currently open directory
+        const testDirectory = this.getTestDirectory();
+        if (!testDirectory) {
+            return;
+        }
+
+        try {
+            const discoveredTests = await this.testAdapter.discoverTests(testDirectory);
+            
+            // Send discovered tests to webview with initial "not-run" state
+            this._view.webview.postMessage({
+                type: 'testsDiscovered',
+                tests: discoveredTests.map(test => ({
+                    name: test.name,
+                    filePath: test.filePath,
+                    state: 'not-run'
+                }))
+            });
+        } catch (error) {
+            console.error('Failed to discover tests:', error);
+        }
+    }
+
+    private getTestDirectory(): string | null {
         const activeEditor = vscode.window.activeTextEditor;
         let testDirectory = '';
 
@@ -98,6 +124,16 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
             testDirectory = vscode.workspace.workspaceFolders[0].uri.fsPath;
         }
 
+        return testDirectory || null;
+    }
+
+    public async runTests() {
+        if (!this._view) {
+            vscode.window.showErrorMessage('Test view not initialized');
+            return;
+        }
+
+        const testDirectory = this.getTestDirectory();
         if (!testDirectory) {
             this._view.webview.postMessage({
                 type: 'testError',

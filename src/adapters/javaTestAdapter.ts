@@ -3,11 +3,71 @@ import * as path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
-import { TestAdapter, TestResult, TestCase } from './testAdapter';
+import { TestAdapter, TestResult, TestCase, DiscoveredTest } from './testAdapter';
 
 const execAsync = promisify(exec);
 
 export class JavaTestAdapter implements TestAdapter {
+    async discoverTests(directory: string): Promise<DiscoveredTest[]> {
+        const tests: DiscoveredTest[] = [];
+        const testDir = path.join(directory, 'src', 'test', 'java');
+
+        if (!fs.existsSync(testDir)) {
+            return tests;
+        }
+
+        // Recursively find all test files
+        const findTestFiles = (dir: string): string[] => {
+            const files: string[] = [];
+            const entries = fs.readdirSync(dir, { withFileTypes: true });
+
+            for (const entry of entries) {
+                const fullPath = path.join(dir, entry.name);
+                if (entry.isDirectory()) {
+                    files.push(...findTestFiles(fullPath));
+                } else if (entry.isFile() && (entry.name.endsWith('Test.java') || entry.name.startsWith('Test'))) {
+                    files.push(fullPath);
+                }
+            }
+            return files;
+        };
+
+        const testFiles = findTestFiles(testDir);
+
+        // Parse each test file to discover test methods
+        for (const filePath of testFiles) {
+            const content = fs.readFileSync(filePath, 'utf8');
+            const lines = content.split('\n');
+            
+            let currentClass = '';
+            for (const line of lines) {
+                // Find test classes
+                const classMatch = /public\s+class\s+(\w+)/.exec(line);
+                if (classMatch) {
+                    currentClass = classMatch[1];
+                }
+                
+                // Find test methods (marked with @Test annotation)
+                if (line.includes('@Test')) {
+                    // Look ahead to next non-empty line for method name
+                    const nextLineIndex = lines.indexOf(line) + 1;
+                    if (nextLineIndex < lines.length) {
+                        const methodMatch = /public\s+void\s+(\w+)\s*\(/.exec(lines[nextLineIndex]);
+                        if (methodMatch && currentClass) {
+                            const testName = `${currentClass}.${methodMatch[1]}`;
+                            tests.push({
+                                name: testName,
+                                filePath: path.relative(directory, filePath)
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        return tests;
+    }
+
     async runTests(directory: string): Promise<TestResult> {
         try {
             // Check if pom.xml exists (Maven project)

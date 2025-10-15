@@ -136,6 +136,33 @@ button:disabled {
     border-left: 3px solid;
 }
 
+/* Test state colors */
+.test-item.test-not-run {
+    border-left-color: #808080; /* Gray */
+}
+
+.test-item.test-running {
+    border-left-color: #f1c232; /* Yellow */
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+.test-item.test-passed {
+    border-left-color: var(--vscode-testing-iconPassed); /* Green */
+}
+
+.test-item.test-failed {
+    border-left-color: var(--vscode-testing-iconFailed); /* Red */
+}
+
+.test-item.test-error {
+    border-left-color: #a65e2b; /* Brownish red */
+}
+
+.test-item.test-skipped {
+    border-left-color: var(--vscode-testing-iconSkipped);
+}
+
+/* Legacy support for old class names */
 .test-item.passed {
     border-left-color: var(--vscode-testing-iconPassed);
 }
@@ -146,6 +173,16 @@ button:disabled {
 
 .test-item.skipped {
     border-left-color: var(--vscode-testing-iconSkipped);
+}
+
+/* Running animation */
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.6;
+    }
 }
 
 .test-name {

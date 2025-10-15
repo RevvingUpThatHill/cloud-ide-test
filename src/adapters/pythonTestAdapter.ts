@@ -3,11 +3,65 @@ import * as path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
-import { TestAdapter, TestResult, TestCase } from './testAdapter';
+import { TestAdapter, TestResult, TestCase, DiscoveredTest } from './testAdapter';
 
 const execAsync = promisify(exec);
 
 export class PythonTestAdapter implements TestAdapter {
+    async discoverTests(directory: string): Promise<DiscoveredTest[]> {
+        const tests: DiscoveredTest[] = [];
+        const testDir = path.join(directory, 'src', 'test');
+
+        if (!fs.existsSync(testDir)) {
+            return tests;
+        }
+
+        // Recursively find all test files
+        const findTestFiles = (dir: string): string[] => {
+            const files: string[] = [];
+            const entries = fs.readdirSync(dir, { withFileTypes: true });
+
+            for (const entry of entries) {
+                const fullPath = path.join(dir, entry.name);
+                if (entry.isDirectory()) {
+                    files.push(...findTestFiles(fullPath));
+                } else if (entry.isFile() && entry.name.includes('test') && entry.name.endsWith('.py')) {
+                    files.push(fullPath);
+                }
+            }
+            return files;
+        };
+
+        const testFiles = findTestFiles(testDir);
+
+        // Parse each test file to discover test methods
+        for (const filePath of testFiles) {
+            const content = fs.readFileSync(filePath, 'utf8');
+            const lines = content.split('\n');
+            
+            let currentClass = '';
+            for (const line of lines) {
+                // Find test classes
+                const classMatch = /^class\s+(\w+)/.exec(line);
+                if (classMatch) {
+                    currentClass = classMatch[1];
+                }
+                
+                // Find test methods
+                const methodMatch = /^\s+def\s+(test\w+)\s*\(/.exec(line);
+                if (methodMatch && currentClass) {
+                    const testName = `${currentClass}.${methodMatch[1]}`;
+                    tests.push({
+                        name: testName,
+                        filePath: path.relative(directory, filePath)
+                    });
+                }
+            }
+        }
+
+        return tests;
+    }
+
     async runTests(directory: string): Promise<TestResult> {
         try {
             // Run Python unittest first (built-in), fall back to pytest if available

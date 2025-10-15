@@ -1,5 +1,8 @@
 const vscode = acquireVsCodeApi();
 
+// Store test states
+let testStates = new Map(); // testName -> { state, message, duration, expected, actual, errorType }
+
 function runTests() {
     vscode.postMessage({ type: 'runTests' });
 }
@@ -15,18 +18,22 @@ function hideStatus() {
     document.getElementById('status').style.display = 'none';
 }
 
-function renderResults(results, workspaceType) {
+function renderTests() {
     const resultsEl = document.getElementById('results');
     
-    if (!results || results.tests.length === 0) {
-        resultsEl.innerHTML = '<div class="no-results">No tests found</div>';
+    if (testStates.size === 0) {
+        resultsEl.innerHTML = '<div class="no-results">No tests discovered</div>';
         return;
     }
     
-    const passed = results.tests.filter(t => t.status === 'passed').length;
-    const failed = results.tests.filter(t => t.status === 'failed').length;
-    const skipped = results.tests.filter(t => t.status === 'skipped').length;
-    const total = results.tests.length;
+    // Calculate stats
+    const total = testStates.size;
+    const notRun = Array.from(testStates.values()).filter(t => t.state === 'not-run').length;
+    const running = Array.from(testStates.values()).filter(t => t.state === 'running').length;
+    const passed = Array.from(testStates.values()).filter(t => t.state === 'passed').length;
+    const failed = Array.from(testStates.values()).filter(t => t.state === 'failed').length;
+    const error = Array.from(testStates.values()).filter(t => t.state === 'error').length;
+    const skipped = Array.from(testStates.values()).filter(t => t.state === 'skipped').length;
     
     let html = `
         <div class="test-summary">
@@ -45,19 +52,20 @@ function renderResults(results, workspaceType) {
                     <span class="stat-label">Failed</span>
                 </div>
                 <div class="stat-item">
-                    <span class="stat-value" style="color: var(--vscode-testing-iconSkipped);">${skipped}</span>
-                    <span class="stat-label">Skipped</span>
+                    <span class="stat-value" style="color: #a65e2b;">${error}</span>
+                    <span class="stat-label">Errors</span>
                 </div>
             </div>
         </div>
     `;
     
-    results.tests.forEach(test => {
+    testStates.forEach((test, name) => {
+        const stateClass = test.state || 'not-run';
         html += `
-            <div class="test-item ${test.status}">
-                <div class="test-name">${escapeHtml(test.name)}</div>
-                <div class="test-status">${test.status}</div>
-                ${test.duration ? `<div class="test-status">Duration: ${test.duration}ms</div>` : ''}
+            <div class="test-item test-${stateClass}">
+                <div class="test-name">${escapeHtml(name)}</div>
+                <div class="test-status">${test.state || 'not run'}</div>
+                ${test.duration ? `<div class="test-duration">Duration: ${test.duration}ms</div>` : ''}
                 ${test.message ? `<div class="test-details">
                     <span class="label">Message</span>
                     <div class="value">${escapeHtml(test.message)}</div>
@@ -75,6 +83,22 @@ function renderResults(results, workspaceType) {
     resultsEl.innerHTML = html;
 }
 
+function renderResults(results, workspaceType) {
+    // Update test states based on results
+    results.tests.forEach(test => {
+        const state = testStates.get(test.name) || {};
+        state.state = test.status;
+        state.duration = test.duration;
+        state.message = test.message;
+        state.expected = test.expected;
+        state.actual = test.actual;
+        state.errorType = test.errorType;
+        testStates.set(test.name, state);
+    });
+    
+    renderTests();
+}
+
 function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
@@ -87,10 +111,27 @@ window.addEventListener('message', event => {
     const button = document.getElementById('runTestsBtn');
     
     switch (message.type) {
+        case 'testsDiscovered':
+            // Initialize test states with discovered tests
+            testStates.clear();
+            message.tests.forEach(test => {
+                testStates.set(test.name, {
+                    state: test.state,
+                    filePath: test.filePath
+                });
+            });
+            renderTests();
+            // Save state
+            vscode.setState({
+                testStates: Array.from(testStates.entries())
+            });
+            break;
+            
         case 'configWarning':
             showStatus('⚠️ ' + message.warning, 'warning');
             // Save state
             vscode.setState({
+                ...vscode.getState(),
                 status: { message: '⚠️ ' + message.warning, type: 'warning' }
             });
             break;
@@ -109,8 +150,11 @@ window.addEventListener('message', event => {
         case 'testRunning':
             button.disabled = true;
             showStatus('Running tests...', 'running');
-            document.getElementById('results').innerHTML = '';
-            // Don't persist "running" state
+            // Set all tests to running state
+            testStates.forEach((test, name) => {
+                test.state = 'running';
+            });
+            renderTests();
             break;
             
         case 'testResults':
@@ -133,7 +177,7 @@ window.addEventListener('message', event => {
             // Save state for persistence
             vscode.setState({
                 status: { message: statusMessage, type: statusType },
-                results: message.results,
+                testStates: Array.from(testStates.entries()),
                 workspaceType: message.workspaceType
             });
             break;
@@ -144,6 +188,7 @@ window.addEventListener('message', event => {
             showStatus(errorMessage, 'error');
             // Save state
             vscode.setState({
+                ...vscode.getState(),
                 status: { message: errorMessage, type: 'error' }
             });
             break;
@@ -154,11 +199,13 @@ window.addEventListener('message', event => {
 window.addEventListener('DOMContentLoaded', () => {
     const previousState = vscode.getState();
     if (previousState) {
+        if (previousState.testStates) {
+            // Restore test states from saved array
+            testStates = new Map(previousState.testStates);
+            renderTests();
+        }
         if (previousState.status) {
             showStatus(previousState.status.message, previousState.status.type);
-        }
-        if (previousState.results) {
-            renderResults(previousState.results, previousState.workspaceType);
         }
         if (previousState.error) {
             const button = document.getElementById('runTestsBtn');

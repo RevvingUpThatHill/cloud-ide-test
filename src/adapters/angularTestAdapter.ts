@@ -3,11 +3,63 @@ import * as path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
-import { TestAdapter, TestResult, TestCase } from './testAdapter';
+import { TestAdapter, TestResult, TestCase, DiscoveredTest } from './testAdapter';
 
 const execAsync = promisify(exec);
 
 export class AngularTestAdapter implements TestAdapter {
+    async discoverTests(directory: string): Promise<DiscoveredTest[]> {
+        const tests: DiscoveredTest[] = [];
+        const srcDir = path.join(directory, 'src');
+
+        if (!fs.existsSync(srcDir)) {
+            return tests;
+        }
+
+        // Recursively find all .spec.ts files
+        const findSpecFiles = (dir: string): string[] => {
+            const files: string[] = [];
+            try {
+                const entries = fs.readdirSync(dir, { withFileTypes: true });
+
+                for (const entry of entries) {
+                    const fullPath = path.join(dir, entry.name);
+                    if (entry.isDirectory() && entry.name !== 'node_modules') {
+                        files.push(...findSpecFiles(fullPath));
+                    } else if (entry.isFile() && entry.name.endsWith('.spec.ts')) {
+                        files.push(fullPath);
+                    }
+                }
+            } catch (error) {
+                // Ignore permission errors
+            }
+            return files;
+        };
+
+        const specFiles = findSpecFiles(srcDir);
+
+        // Parse each spec file to discover test cases
+        for (const filePath of specFiles) {
+            try {
+                const content = fs.readFileSync(filePath, 'utf8');
+                
+                // Find describe blocks and it/test blocks
+                const itMatches = content.matchAll(/(?:it|test)\s*\(\s*['"`]([^'"`]+)['"`]/g);
+                for (const match of itMatches) {
+                    const testName = match[1];
+                    tests.push({
+                        name: testName,
+                        filePath: path.relative(directory, filePath)
+                    });
+                }
+            } catch (error) {
+                // Skip files that can't be read
+            }
+        }
+
+        return tests;
+    }
+
     async runTests(directory: string): Promise<TestResult> {
         try {
             // Check if angular.json or package.json exists
