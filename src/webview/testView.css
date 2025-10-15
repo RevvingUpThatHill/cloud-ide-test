@@ -238,6 +238,15 @@ button:disabled {
     animation: flash-red 1s ease-in-out;
 }
 
+/* Stats flash animations */
+.stat-item.stat-flash-green {
+    animation: flash-green 1s ease-in-out;
+}
+
+.stat-item.stat-flash-red {
+    animation: flash-red 1s ease-in-out;
+}
+
 .test-name {
     font-weight: bold;
     margin-bottom: 4px;

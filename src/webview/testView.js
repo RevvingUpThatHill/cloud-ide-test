@@ -4,6 +4,7 @@ const vscode = acquireVsCodeApi();
 let testStates = new Map(); // testName -> { state, message, duration, expected, actual, errorType }
 let previousTestStates = new Map(); // Store previous run results to detect changes
 let scrollAnchor = null; // { testName: string, viewportOffset: number } - captured before running
+let previousStats = { passed: 0, failed: 0, error: 0 }; // Track previous stats for flash animations
 
 function runTests() {
     vscode.postMessage({ type: 'runTests' });
@@ -79,6 +80,21 @@ function renderTests(options = {}) {
     const error = Array.from(testStates.values()).filter(t => t.state === 'error').length;
     const skipped = Array.from(testStates.values()).filter(t => t.state === 'skipped').length;
     
+    // Determine flash animations for stats
+    let passedFlash = '';
+    let failedFlash = '';
+    let errorFlash = '';
+    
+    if (passed > previousStats.passed) {
+        passedFlash = 'stat-flash-green';
+    }
+    if (failed > previousStats.failed) {
+        failedFlash = 'stat-flash-red';
+    }
+    if (error > previousStats.error) {
+        errorFlash = 'stat-flash-red';
+    }
+    
     let html = `
         <div class="test-summary">
             <div class="section-title">Test Summary</div>
@@ -87,21 +103,24 @@ function renderTests(options = {}) {
                     <span class="stat-value">${total}</span>
                     <span class="stat-label">Total</span>
                 </div>
-                <div class="stat-item">
-                    <span class="stat-value" style="color: var(--vscode-testing-iconPassed);">${passed}</span>
+                <div class="stat-item ${passedFlash}">
+                    <span class="stat-value" style="color: #73c991;">${passed}</span>
                     <span class="stat-label">Passed</span>
                 </div>
-                <div class="stat-item">
-                    <span class="stat-value" style="color: var(--vscode-testing-iconFailed);">${failed}</span>
+                <div class="stat-item ${failedFlash}">
+                    <span class="stat-value" style="color: #d32f2f;">${failed}</span>
                     <span class="stat-label">Failed</span>
                 </div>
-                <div class="stat-item">
+                <div class="stat-item ${errorFlash}">
                     <span class="stat-value" style="color: #a65e2b;">${error}</span>
                     <span class="stat-label">Errors</span>
                 </div>
             </div>
         </div>
     `;
+    
+    // Update previous stats for next comparison
+    previousStats = { passed, failed, error };
     
     testStates.forEach((test, name) => {
         const stateClass = test.state || 'not-run';
@@ -284,7 +303,8 @@ window.addEventListener('message', event => {
             // Save state
             vscode.setState({
                 testStates: Array.from(testStates.entries()),
-                previousTestStates: Array.from(previousTestStates.entries())
+                previousTestStates: Array.from(previousTestStates.entries()),
+                previousStats: previousStats
             });
             break;
             
@@ -349,6 +369,7 @@ window.addEventListener('message', event => {
             vscode.setState({
                 testStates: Array.from(testStates.entries()),
                 previousTestStates: Array.from(previousTestStates.entries()),
+                previousStats: previousStats,
                 workspaceType: message.workspaceType
             });
             break;
@@ -378,6 +399,10 @@ window.addEventListener('DOMContentLoaded', () => {
         if (previousState.previousTestStates) {
             // Restore previous test states for change detection
             previousTestStates = new Map(previousState.previousTestStates);
+        }
+        if (previousState.previousStats) {
+            // Restore previous stats for flash detection
+            previousStats = previousState.previousStats;
         }
         // Only show status if it's a warning or error, not from completed tests
         if (previousState.status && (previousState.status.type === 'warning' || previousState.status.type === 'error')) {
