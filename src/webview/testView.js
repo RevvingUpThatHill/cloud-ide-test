@@ -140,14 +140,9 @@ function renderTests(options = {}) {
         const stateClass = test.state || 'not-run';
         let displayState = test.state || 'not run';
         
-        // While running, show the previous state text to avoid jitter
-        const previousTest = previousTestStates.get(name);
-        if (test.state === 'running' && previousTest && previousTest.state !== 'running') {
-            displayState = previousTest.state === 'not-run' ? 'not run' : previousTest.state;
-        }
-        
         // Check if status changed from previous run
         let flashClass = '';
+        const previousTest = previousTestStates.get(name);
         if (previousTest) {
             console.log(`Comparing "${name}": previous="${previousTest.state}" current="${test.state}"`);
             if (previousTest.state !== test.state) {
@@ -166,27 +161,21 @@ function renderTests(options = {}) {
             console.log(`No previous state for "${name}"`);
         }
         
-        // While running, show previous test details to avoid jitter from changing heights
-        let testDetails = test;
-        if (test.state === 'running' && previousTest) {
-            testDetails = previousTest;
-        }
-        
         console.log(`Rendering test "${name}" with state "${test.state}" (class: test-${stateClass} ${flashClass})`);
         html += `
             <div class="test-item test-${stateClass} ${flashClass}">
                 <div class="test-name">${escapeHtml(name)}</div>
                 <div class="test-status">${displayState}</div>
-                ${testDetails.duration ? `<div class="test-duration">Duration: ${testDetails.duration}ms</div>` : ''}
-                ${testDetails.message ? `<div class="test-details">
+                ${test.duration ? `<div class="test-duration">Duration: ${test.duration}ms</div>` : ''}
+                ${test.message ? `<div class="test-details">
                     <span class="label">Message</span>
-                    <div class="value">${escapeHtml(testDetails.message)}</div>
+                    <div class="value">${escapeHtml(test.message)}</div>
                 </div>` : ''}
-                ${testDetails.expected ? `<div class="test-details">
+                ${test.expected ? `<div class="test-details">
                     <span class="label">Expected</span>
-                    <div class="value">${escapeHtml(testDetails.expected)}</div>
+                    <div class="value">${escapeHtml(test.expected)}</div>
                     <span class="label">Actual</span>
-                    <div class="value">${escapeHtml(testDetails.actual || 'N/A')}</div>
+                    <div class="value">${escapeHtml(test.actual || 'N/A')}</div>
                 </div>` : ''}
             </div>
         `;
