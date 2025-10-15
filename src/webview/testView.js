@@ -38,10 +38,7 @@ function renderTests(options = {}) {
     if (options.useScrollAnchor && scrollAnchor) {
         topmostTestName = scrollAnchor.testName;
         testViewportOffset = scrollAnchor.viewportOffset;
-        console.log(`Using saved scroll anchor: "${topmostTestName}" at viewport offset ${testViewportOffset}px`);
     } else if (!options.skipScrollPreservation) {
-        console.log(`Current scroll position: ${scrollTop}px`);
-        
         // Find which test is currently at the top of the viewport
         const testItems = resultsEl.querySelectorAll('.test-item');
         for (const item of testItems) {
@@ -53,7 +50,6 @@ function renderTests(options = {}) {
                     topmostTestName = nameEl.textContent;
                     // Store viewport position (distance from top of viewport)
                     testViewportOffset = rect.top;
-                    console.log(`Found topmost visible test: "${topmostTestName}" at viewport offset ${testViewportOffset}px`);
                     break;
                 }
             }
@@ -66,7 +62,6 @@ function renderTests(options = {}) {
                 topmostTestName = firstNameEl.textContent;
                 const firstRect = testItems[0].getBoundingClientRect();
                 testViewportOffset = firstRect.top;
-                console.log(`Using fallback: first test "${topmostTestName}" at viewport offset ${testViewportOffset}px`);
             }
         }
     }
@@ -144,25 +139,15 @@ function renderTests(options = {}) {
         // Check if status changed from previous run
         let flashClass = '';
         const previousTest = previousTestStates.get(name);
-        if (previousTest) {
-            console.log(`Comparing "${name}": previous="${previousTest.state}" current="${test.state}"`);
-            if (previousTest.state !== test.state) {
-                // Status changed
-                if ((previousTest.state === 'failed' || previousTest.state === 'not-run') && test.state === 'passed') {
-                    flashClass = 'status-improved';
-                    console.log(`✓ Test "${name}" improved: ${previousTest.state} → passed (FLASHING GREEN)`);
-                } else if ((previousTest.state === 'passed' || previousTest.state === 'not-run') && test.state === 'failed') {
-                    flashClass = 'status-regressed';
-                    console.log(`✗ Test "${name}" regressed: ${previousTest.state} → failed (FLASHING RED)`);
-                } else {
-                    console.log(`  Status changed but no flash: ${previousTest.state} → ${test.state}`);
-                }
+        if (previousTest && previousTest.state !== test.state) {
+            // Status changed
+            if ((previousTest.state === 'failed' || previousTest.state === 'not-run') && test.state === 'passed') {
+                flashClass = 'status-improved';
+            } else if ((previousTest.state === 'passed' || previousTest.state === 'not-run') && test.state === 'failed') {
+                flashClass = 'status-regressed';
             }
-        } else {
-            console.log(`No previous state for "${name}"`);
         }
         
-        console.log(`Rendering test "${name}" with state "${test.state}" (class: test-${stateClass} ${flashClass})`);
         html += `
             <div class="test-item test-${stateClass} ${flashClass}">
                 <div class="test-name">${escapeHtml(name)}</div>
@@ -186,12 +171,9 @@ function renderTests(options = {}) {
     
     // Restore scroll position to maintain same viewport offset for target test
     if (topmostTestName && !options.skipScrollPreservation) {
-        console.log(`Attempting to restore: "${topmostTestName}" should be at viewport offset ${testViewportOffset}px`);
-        
         // Use single requestAnimationFrame for faster restoration
         requestAnimationFrame(() => {
             const testItems = resultsEl.querySelectorAll('.test-item');
-            console.log(`Found ${testItems.length} test items after render`);
             
             for (const item of testItems) {
                 const nameEl = item.querySelector('.test-name');
@@ -204,20 +186,10 @@ function renderTests(options = {}) {
                     const scrollDelta = rect.top - testViewportOffset;
                     const targetScrollTop = currentScrollTop + scrollDelta;
                     
-                    console.log(`Test "${topmostTestName}" is at viewport ${rect.top}px, target viewport ${testViewportOffset}px`);
-                    console.log(`Setting scroll to ${targetScrollTop}px (current: ${currentScrollTop}px, delta: ${scrollDelta}px)`);
-                    
                     window.scrollTo({
                         top: targetScrollTop,
                         behavior: 'instant'
                     });
-                    
-                    // Verify
-                    setTimeout(() => {
-                        const finalScrollTop = window.scrollY || document.documentElement.scrollTop;
-                        const finalRect = item.getBoundingClientRect();
-                        console.log(`✓ Scroll restored: ${finalScrollTop}px, test now at viewport ${finalRect.top}px (target was ${testViewportOffset}px, diff: ${Math.abs(finalRect.top - testViewportOffset).toFixed(2)}px)`);
-                    }, 0);
                     break;
                 }
             }
@@ -227,14 +199,7 @@ function renderTests(options = {}) {
 
 function renderResults(results, workspaceType) {
     // Update test states based on results
-    console.log('=== RESULTS RECEIVED ===');
-    console.log('Number of results:', results.tests.length);
-    console.log('Discovered test names:', Array.from(testStates.keys()));
-    console.log('Result test names:', results.tests.map(t => t.name));
-    
     results.tests.forEach(test => {
-        console.log(`Processing result: "${test.name}" -> status: "${test.status}"`);
-        
         // Try to find matching test in discovered tests
         let matchedKey = null;
         testStates.forEach((value, key) => {
@@ -244,7 +209,6 @@ function renderResults(results, workspaceType) {
         });
         
         if (matchedKey) {
-            console.log(`✓ MATCHED: "${test.name}" found in discovered tests`);
             const state = testStates.get(matchedKey);
             state.state = test.status;
             state.duration = test.duration;
@@ -253,9 +217,7 @@ function renderResults(results, workspaceType) {
             state.actual = test.actual;
             state.errorType = test.errorType;
             testStates.set(matchedKey, state);
-            console.log(`  Updated state to:`, state);
         } else {
-            console.log(`✗ NOT MATCHED: "${test.name}" NOT found in discovered tests`);
             // Add it anyway
             testStates.set(test.name, {
                 state: test.status,
@@ -266,11 +228,6 @@ function renderResults(results, workspaceType) {
                 errorType: test.errorType
             });
         }
-    });
-    
-    console.log('=== FINAL TEST STATES ===');
-    testStates.forEach((value, key) => {
-        console.log(`  "${key}": state="${value.state}"`);
     });
     
     // Render with saved scroll anchor to avoid jumps, and trigger stat flashes
@@ -364,7 +321,6 @@ window.addEventListener('message', event => {
                                 testName: nameEl.textContent,
                                 viewportOffset: rect.top
                             };
-                            console.log(`Captured scroll anchor before running: "${scrollAnchor.testName}" at ${scrollAnchor.viewportOffset}px`);
                             break;
                         }
                     }
