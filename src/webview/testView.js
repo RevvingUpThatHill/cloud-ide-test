@@ -92,19 +92,20 @@ function renderTests(options = {}) {
         displayError = previousStats.error || 0;
     }
     
-    // Determine flash animations for stats (only after test results complete)
+    // Determine flash animations for stats (always flash when tests complete)
     let passedFlash = '';
     let failedFlash = '';
     let errorFlash = '';
     
     if (options.afterTestResults) {
-        if (passed !== previousStats.passed && previousStats.passed !== undefined) {
-            passedFlash = passed > previousStats.passed ? 'stat-flash-green' : 'stat-flash-red';
+        // Always flash when tests complete, regardless of whether counts changed
+        if (passed > 0) {
+            passedFlash = 'stat-flash-green';
         }
-        if (failed !== previousStats.failed && previousStats.failed !== undefined) {
+        if (failed > 0) {
             failedFlash = 'stat-flash-red';
         }
-        if (error !== previousStats.error && previousStats.error !== undefined) {
+        if (error > 0) {
             errorFlash = 'stat-flash-red';
         }
         
