@@ -76,10 +76,11 @@ export class PythonTestAdapter implements TestAdapter {
             return this.parseTestOutput(stdout, stderr, directory);
         } catch (error: any) {
             // Even if tests fail, output might contain results
-            if (error.stdout) {
-                return this.parseTestOutput(error.stdout, error.stderr || '', directory);
+            if (error.stdout || error.stderr) {
+                return this.parseTestOutput(error.stdout || '', error.stderr || '', directory);
             }
-            throw error;
+            // If no output at all, it's a real error (e.g., command not found)
+            throw new Error(`Failed to run tests: ${error.message}`);
         }
     }
 
@@ -189,16 +190,32 @@ export class PythonTestAdapter implements TestAdapter {
         const lines = output.split('\n');
         
         // Parse unittest verbose output
-        // Pattern: test_method_name (test.module.TestClass) ... ok/FAIL/ERROR/skipped
+        // Pattern: test_method_name (module.ClassName.test_method_name) ... ok/FAIL/ERROR/skipped
+        // or: test_method_name (module.ClassName) ... ok/FAIL/ERROR/skipped
         const testPattern = /^(test_\w+)\s+\(([^)]+)\)\s+\.\.\.\s+(ok|FAIL|ERROR|skipped)/gm;
         
         let match;
         while ((match = testPattern.exec(output)) !== null) {
-            const [, methodName, className, result] = match;
+            const [, methodName, fullPath, result] = match;
+            
+            // Extract class name from full path
+            // Format can be: lab_test.TestLabFunctions.test_method or lab_test.TestLabFunctions
+            const pathParts = fullPath.split('.');
+            let className = '';
+            
+            // If the last part is the method name (duplicate), remove it
+            if (pathParts[pathParts.length - 1] === methodName) {
+                className = pathParts[pathParts.length - 2];
+            } else {
+                className = pathParts[pathParts.length - 1];
+            }
+            
             const fullName = `${className}.${methodName}`;
             
             let status: 'passed' | 'failed' | 'skipped' = 'passed';
             let message = '';
+            let expected = '';
+            let actual = '';
             
             if (result === 'ok') {
                 status = 'passed';
@@ -207,17 +224,27 @@ export class PythonTestAdapter implements TestAdapter {
             } else {
                 status = 'failed';
                 // Try to find the error message for this test
-                const failPattern = new RegExp(`${methodName}[\\s\\S]*?(?:AssertionError|Error):\\s*([^\\n]+)`, 'i');
+                const failPattern = new RegExp(`FAIL: ${methodName}[\\s\\S]*?AssertionError:\\s*([^\\n]+)`, 'i');
                 const failMatch = failPattern.exec(output);
                 if (failMatch) {
                     message = failMatch[1].trim();
+                    
+                    // Try to extract expected vs actual from assertion message
+                    // Format: "actual != expected" or "actual == expected (for negative assertions)"
+                    const comparisonMatch = /^(.+?)\s*!=\s*(.+)$/.exec(message);
+                    if (comparisonMatch) {
+                        actual = comparisonMatch[1].trim();
+                        expected = comparisonMatch[2].trim();
+                    }
                 }
             }
             
             tests.push({
                 name: fullName,
                 status,
-                message: message || undefined
+                message: message || undefined,
+                expected: expected || undefined,
+                actual: actual || undefined
             });
         }
         
