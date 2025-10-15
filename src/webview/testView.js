@@ -86,23 +86,52 @@ function renderTests() {
 
 function renderResults(results, workspaceType) {
     // Update test states based on results
-    console.log('Updating test states with results:', results.tests.length, 'tests');
-    console.log('Current test states:', Array.from(testStates.keys()));
+    console.log('=== RESULTS RECEIVED ===');
+    console.log('Number of results:', results.tests.length);
+    console.log('Discovered test names:', Array.from(testStates.keys()));
     console.log('Result test names:', results.tests.map(t => t.name));
     
     results.tests.forEach(test => {
-        const state = testStates.get(test.name) || {};
-        console.log(`Updating test "${test.name}" with status "${test.status}"`);
-        state.state = test.status;
-        state.duration = test.duration;
-        state.message = test.message;
-        state.expected = test.expected;
-        state.actual = test.actual;
-        state.errorType = test.errorType;
-        testStates.set(test.name, state);
+        console.log(`Processing result: "${test.name}" -> status: "${test.status}"`);
+        
+        // Try to find matching test in discovered tests
+        let matchedKey = null;
+        testStates.forEach((value, key) => {
+            if (key === test.name) {
+                matchedKey = key;
+            }
+        });
+        
+        if (matchedKey) {
+            console.log(`✓ MATCHED: "${test.name}" found in discovered tests`);
+            const state = testStates.get(matchedKey);
+            state.state = test.status;
+            state.duration = test.duration;
+            state.message = test.message;
+            state.expected = test.expected;
+            state.actual = test.actual;
+            state.errorType = test.errorType;
+            testStates.set(matchedKey, state);
+            console.log(`  Updated state to:`, state);
+        } else {
+            console.log(`✗ NOT MATCHED: "${test.name}" NOT found in discovered tests`);
+            // Add it anyway
+            testStates.set(test.name, {
+                state: test.status,
+                duration: test.duration,
+                message: test.message,
+                expected: test.expected,
+                actual: test.actual,
+                errorType: test.errorType
+            });
+        }
     });
     
-    console.log('Updated test states:', Array.from(testStates.entries()));
+    console.log('=== FINAL TEST STATES ===');
+    testStates.forEach((value, key) => {
+        console.log(`  "${key}": state="${value.state}"`);
+    });
+    
     renderTests();
 }
 

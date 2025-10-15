@@ -10,6 +10,10 @@ body {
 
 /* Header section */
 .header {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background-color: var(--vscode-editor-background);
     border-bottom: 1px solid var(--vscode-panel-border);
     padding-bottom: 8px;
     margin-bottom: 12px;
@@ -40,6 +44,10 @@ button:disabled {
 
 /* Status styles */
 .status {
+    position: sticky;
+    top: 52px; /* Below the header button */
+    z-index: 99;
+    background-color: var(--vscode-editor-background);
     padding: 6px 8px;
     margin-bottom: 12px;
     border-radius: 4px;
@@ -139,7 +147,7 @@ button:disabled {
     margin-bottom: 8px;
     padding: 8px;
     background-color: var(--vscode-editor-background);
-    border-left: 3px solid;
+    border-left: 6px solid;
 }
 
 /* Test state colors */
