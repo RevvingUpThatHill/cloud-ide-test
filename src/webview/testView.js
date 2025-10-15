@@ -61,11 +61,12 @@ function renderTests() {
     
     testStates.forEach((test, name) => {
         const stateClass = test.state || 'not-run';
+        const displayState = test.state || 'not run';
         console.log(`Rendering test "${name}" with state "${test.state}" (class: test-${stateClass})`);
         html += `
             <div class="test-item test-${stateClass}">
                 <div class="test-name">${escapeHtml(name)}</div>
-                <div class="test-status">${test.state || 'not run'}</div>
+                <div class="test-status">${displayState}</div>
                 ${test.duration ? `<div class="test-duration">Duration: ${test.duration}ms</div>` : ''}
                 ${test.message ? `<div class="test-details">
                     <span class="label">Message</span>

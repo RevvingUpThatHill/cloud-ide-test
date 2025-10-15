@@ -147,33 +147,35 @@ button:disabled {
     margin-bottom: 8px;
     padding: 8px;
     background-color: var(--vscode-editor-background);
-    border-left: 6px solid;
+    border-left-width: 6px;
+    border-left-style: solid;
+    border-left-color: #808080; /* Default gray */
 }
 
-/* Test state colors */
+/* Test state colors - using !important to ensure they override */
 .test-item.test-not-run {
-    border-left-color: #808080; /* Gray */
+    border-left-color: #808080 !important; /* Gray */
 }
 
 .test-item.test-running {
-    border-left-color: #f1c232; /* Yellow */
+    border-left-color: #f1c232 !important; /* Yellow */
     animation: pulse 1.5s ease-in-out infinite;
 }
 
 .test-item.test-passed {
-    border-left-color: var(--vscode-testing-iconPassed); /* Green */
+    border-left-color: #73c991 !important; /* Green */
 }
 
 .test-item.test-failed {
-    border-left-color: var(--vscode-testing-iconFailed); /* Red */
+    border-left-color: #f14c4c !important; /* Red */
 }
 
 .test-item.test-error {
-    border-left-color: #a65e2b; /* Brownish red */
+    border-left-color: #a65e2b !important; /* Brownish red */
 }
 
 .test-item.test-skipped {
-    border-left-color: var(--vscode-testing-iconSkipped);
+    border-left-color: #848484 !important; /* Light gray */
 }
 
 /* Legacy support for old class names */
