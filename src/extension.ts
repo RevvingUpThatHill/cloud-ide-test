@@ -29,6 +29,9 @@ export async function activate(context: vscode.ExtensionContext) {
             )
         );
 
+        // Discover tests at extension activation (before webview is opened)
+        await provider.discoverTestsOnActivation();
+
         // Register the run tests command - wrapped with telemetry
         const runTestsCommand = telemetry.instrumentCommand(
             'cloud-ide-test.runTests',

@@ -51,6 +51,27 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
         }
     }
 
+    /**
+     * Discover tests during extension activation (before webview is created)
+     */
+    public async discoverTestsOnActivation() {
+        const testDirectory = this.getTestDirectory();
+        if (!testDirectory) {
+            console.log('No test directory found for test discovery');
+            return;
+        }
+
+        try {
+            const discoveredTests = await this.testAdapter.discoverTests(testDirectory);
+            console.log(`Discovered ${discoveredTests.length} tests at extension activation`);
+            
+            // Make test files read-only
+            await this.makeTestFilesReadOnly(discoveredTests.map(t => t.filePath));
+        } catch (error) {
+            console.error('Failed to discover tests on activation:', error);
+        }
+    }
+
     private getTestAdapter(workspaceType: 'Java' | 'Angular' | 'Python'): TestAdapter {
         switch (workspaceType) {
             case 'Java':
@@ -87,7 +108,7 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
             }, 100);
         }
 
-        // Discover and display tests on load
+        // Display already-discovered tests when webview loads
         setTimeout(() => {
             this.discoverAndDisplayTests();
         }, 200);
