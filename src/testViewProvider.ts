@@ -134,68 +134,93 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
 
     private async makeTestFilesReadOnly(testFilePaths: string[]): Promise<void> {
         for (const filePath of testFilePaths) {
-            // Track this as a read-only file
-            this.readOnlyTestFiles.add(filePath);
+            // Convert to absolute path if it's relative
+            const absolutePath = path.isAbsolute(filePath) 
+                ? filePath 
+                : path.resolve(filePath);
+            
+            // Track this as a read-only file (using absolute path)
+            this.readOnlyTestFiles.add(absolutePath);
             
             // Store original content
             try {
-                const content = fs.readFileSync(filePath, 'utf8');
-                this.originalTestContent.set(filePath, content);
-                console.log(`Stored original content for: ${filePath}`);
+                const content = fs.readFileSync(absolutePath, 'utf8');
+                this.originalTestContent.set(absolutePath, content);
+                console.log(`Stored original content for: ${absolutePath}`);
             } catch (error) {
-                console.warn(`Failed to read test file content: ${filePath}`, error);
+                console.warn(`Failed to read test file content: ${absolutePath}`, error);
             }
             
             try {
-                // Set read-only at OS level (Linux/Mac)
-                await execAsync(`sudo chmod 444 "${filePath}"`);
-                console.log(`Made test file read-only at OS level: ${filePath}`);
+                // Set read-only at OS level (Linux/Mac) - use absolute path
+                const chmodResult = await execAsync(`sudo chmod 444 "${absolutePath}"`);
+                console.log(`chmod output: ${chmodResult.stdout || '(no output)'}`);
+                
+                // Verify the permissions were set
+                const lsResult = await execAsync(`ls -l "${absolutePath}"`);
+                console.log(`File permissions after chmod: ${lsResult.stdout}`);
+                
+                if (!lsResult.stdout.includes('r--r--r--')) {
+                    console.error(`WARNING: File permissions not set correctly for ${absolutePath}`);
+                    vscode.window.showWarningMessage(
+                        `Failed to set test file as read-only: ${path.basename(absolutePath)}`
+                    );
+                } else {
+                    console.log(`✓ Successfully set read-only permissions for: ${path.basename(absolutePath)}`);
+                }
             } catch (error) {
-                console.warn(`Failed to chmod test file: ${filePath}`, error);
-                // Continue even if chmod fails (might not be on Linux/Mac)
+                const errorMsg = error instanceof Error ? error.message : String(error);
+                console.error(`Failed to chmod test file: ${absolutePath}`, errorMsg);
+                vscode.window.showWarningMessage(
+                    `Failed to protect test file: ${path.basename(absolutePath)} - ${errorMsg}`
+                );
             }
         }
     }
 
     private setupReadOnlyProtection(context: vscode.ExtensionContext): void {
-        // Monitor text changes and revert immediately
-        const changeDisposable = vscode.workspace.onDidChangeTextDocument(async (event) => {
-            const filePath = event.document.uri.fsPath;
-            
-            if (this.readOnlyTestFiles.has(filePath) && event.contentChanges.length > 0) {
-                // Show warning
-                vscode.window.showWarningMessage(
-                    `Test file "${path.basename(filePath)}" is read-only and cannot be modified.`
-                );
-                
-                // Revert to original content
-                const original = this.originalTestContent.get(filePath);
-                if (original !== undefined) {
-                    const fullRange = new vscode.Range(
-                        event.document.positionAt(0),
-                        event.document.positionAt(event.document.getText().length)
-                    );
-                    
-                    const edit = new vscode.WorkspaceEdit();
-                    edit.replace(event.document.uri, fullRange, original);
-                    await vscode.workspace.applyEdit(edit);
-                }
-            }
-        });
-        
-        // Also prevent saves
-        const saveDisposable = vscode.workspace.onWillSaveTextDocument((event) => {
+        // Intercept text edits and reject them
+        const editDisposable = vscode.workspace.onWillSaveTextDocument((event) => {
             const filePath = event.document.uri.fsPath;
             if (this.readOnlyTestFiles.has(filePath)) {
                 vscode.window.showErrorMessage(
                     `Cannot save test file "${path.basename(filePath)}" - it is read-only.`
                 );
-                // Prevent the save
-                event.waitUntil(Promise.reject(new Error('File is read-only')));
+                // Cancel the save operation
+                event.waitUntil(Promise.resolve(false as any));
+            }
+        });
+
+        // Track when a readonly file is opened and immediately close the editor, reopen as preview
+        const openDisposable = vscode.workspace.onDidOpenTextDocument(async (document) => {
+            const filePath = document.uri.fsPath;
+            if (this.readOnlyTestFiles.has(filePath)) {
+                // Get all visible editors
+                const editors = vscode.window.visibleTextEditors;
+                for (const editor of editors) {
+                    if (editor.document.uri.fsPath === filePath) {
+                        // Mark editor viewColumn for reopening
+                        const viewColumn = editor.viewColumn;
+                        
+                        // Close the editable version
+                        await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
+                        
+                        // Reopen in preview mode (readonly)
+                        await vscode.commands.executeCommand('vscode.open', document.uri, {
+                            preview: true,
+                            viewColumn: viewColumn
+                        });
+                        
+                        vscode.window.showWarningMessage(
+                            `Test file "${path.basename(filePath)}" opened in read-only mode.`
+                        );
+                        break;
+                    }
+                }
             }
         });
         
-        context.subscriptions.push(changeDisposable, saveDisposable);
+        context.subscriptions.push(editDisposable, openDisposable);
     }
 
     private getTestDirectory(): string | null {
