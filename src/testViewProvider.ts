@@ -23,8 +23,13 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
     private testAdapter: TestAdapter;
     private configWarnings: string[];
     private workspaceTypeDisplay: string;
+    private readOnlyTestFiles: Set<string> = new Set();
 
-    constructor(private readonly _extensionUri: vscode.Uri, configWarnings: string[] = []) {
+    constructor(
+        private readonly _extensionUri: vscode.Uri, 
+        configWarnings: string[] = [],
+        context?: vscode.ExtensionContext
+    ) {
         // Get configuration (already validated at extension startup)
         const config = getConfig();
         this.workspaceType = config.workspaceType;
@@ -38,6 +43,11 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
         
         // Initialize the appropriate test adapter
         this.testAdapter = this.getTestAdapter(config.workspaceType);
+        
+        // Setup read-only protection for test files
+        if (context) {
+            this.setupReadOnlyProtection(context);
+        }
     }
 
     private getTestAdapter(workspaceType: 'Java' | 'Angular' | 'Python'): TestAdapter {
@@ -123,21 +133,44 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
 
     private async makeTestFilesReadOnly(testFilePaths: string[]): Promise<void> {
         for (const filePath of testFilePaths) {
+            // Track this as a read-only file
+            this.readOnlyTestFiles.add(filePath);
+            
             try {
-                // Use sudo chmod to set read-only (444 = r--r--r--)
+                // Set read-only at OS level (Linux/Mac)
                 await execAsync(`sudo chmod 444 "${filePath}"`);
-                console.log(`Made test file read-only: ${filePath}`);
+                console.log(`Made test file read-only at OS level: ${filePath}`);
             } catch (error) {
-                console.warn(`Failed to make test file read-only: ${filePath}`, error);
+                console.warn(`Failed to chmod test file: ${filePath}`, error);
                 // Continue even if chmod fails (might not be on Linux/Mac)
             }
         }
+    }
+
+    private setupReadOnlyProtection(context: vscode.ExtensionContext): void {
+        // Monitor all text document changes and prevent edits to test files
+        const disposable = vscode.workspace.onDidChangeTextDocument(async (event) => {
+            const filePath = event.document.uri.fsPath;
+            
+            if (this.readOnlyTestFiles.has(filePath) && event.contentChanges.length > 0) {
+                // Show warning
+                vscode.window.showWarningMessage(
+                    `Test file "${path.basename(filePath)}" is read-only and cannot be modified.`
+                );
+                
+                // Undo the changes
+                const edit = new vscode.WorkspaceEdit();
+                for (const change of event.contentChanges) {
+                    edit.delete(event.document.uri, change.range);
+                    if (change.text) {
+                        edit.insert(event.document.uri, change.range.start, '');
+                    }
+                }
+                await vscode.workspace.applyEdit(edit);
+            }
+        });
         
-        if (testFilePaths.length > 0) {
-            vscode.window.showInformationMessage(
-                `Test files are now read-only to prevent accidental modifications.`
-            );
-        }
+        context.subscriptions.push(disposable);
     }
 
     private getTestDirectory(): string | null {

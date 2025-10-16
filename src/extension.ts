@@ -20,7 +20,7 @@ export async function activate(context: vscode.ExtensionContext) {
         );
 
         // Register the webview provider for the sidebar
-        const provider = new TestViewProvider(context.extensionUri, config.warnings);
+        const provider = new TestViewProvider(context.extensionUri, config.warnings, context);
         
         context.subscriptions.push(
             vscode.window.registerWebviewViewProvider(
