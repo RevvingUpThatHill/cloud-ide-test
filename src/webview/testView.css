@@ -202,30 +202,30 @@ button:disabled {
 /* Flash animations for status changes */
 @keyframes flash-green {
     0% {
-        background-color: var(--vscode-editor-background);
+        background-color: var(--vscode-textCodeBlock-background);
         transform: scale(1);
     }
     50% {
-        background-color: rgba(115, 201, 145, 0.6);
+        background-color: rgba(115, 201, 145, 0.3);
         transform: scale(1.02);
     }
     100% {
-        background-color: var(--vscode-editor-background);
+        background-color: var(--vscode-textCodeBlock-background);
         transform: scale(1);
     }
 }
 
 @keyframes flash-red {
     0% {
-        background-color: var(--vscode-editor-background);
+        background-color: var(--vscode-textCodeBlock-background);
         transform: scale(1);
     }
     50% {
-        background-color: rgba(211, 47, 47, 0.6);
+        background-color: rgba(211, 47, 47, 0.3);
         transform: scale(1.02);
     }
     100% {
-        background-color: var(--vscode-editor-background);
+        background-color: var(--vscode-textCodeBlock-background);
         transform: scale(1);
     }
 }
