@@ -61,9 +61,16 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
             return;
         }
 
+        console.log(`[Test Discovery] Using workspace directory: ${testDirectory}`);
+
         try {
             const discoveredTests = await this.testAdapter.discoverTests(testDirectory);
-            console.log(`Discovered ${discoveredTests.length} tests at extension activation`);
+            console.log(`[Test Discovery] Discovered ${discoveredTests.length} tests at extension activation`);
+            
+            // Log the test file paths
+            discoveredTests.forEach(test => {
+                console.log(`[Test Discovery] Test: ${test.name}, File: ${test.filePath}`);
+            });
             
             // Make test files read-only
             await this.makeTestFilesReadOnly(discoveredTests.map(t => t.filePath));
@@ -154,11 +161,21 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
     }
 
     private async makeTestFilesReadOnly(testFilePaths: string[]): Promise<void> {
+        const workspaceRoot = this.getTestDirectory();
+        if (!workspaceRoot) {
+            console.warn('Cannot make test files read-only: No workspace root found');
+            return;
+        }
+
+        console.log(`[chmod] Workspace root: ${workspaceRoot}`);
+        
         for (const filePath of testFilePaths) {
-            // Convert to absolute path if it's relative
+            // Convert to absolute path - resolve relative to workspace root
             const absolutePath = path.isAbsolute(filePath) 
                 ? filePath 
-                : path.resolve(filePath);
+                : path.join(workspaceRoot, filePath);
+            
+            console.log(`[chmod] Processing file: ${filePath} -> ${absolutePath}`);
             
             // Track this as a read-only file (using absolute path)
             this.readOnlyTestFiles.add(absolutePath);
