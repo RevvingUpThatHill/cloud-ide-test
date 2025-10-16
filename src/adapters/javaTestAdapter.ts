@@ -143,15 +143,22 @@ export class JavaTestAdapter implements TestAdapter {
         
         // Try to parse JUnit XML reports if available
         const surefireReportsDir = path.join(directory, 'target', 'surefire-reports');
+        console.log(`[Java Adapter] Looking for XML reports in: ${surefireReportsDir}`);
+        
         if (fs.existsSync(surefireReportsDir)) {
             const xmlFiles = fs.readdirSync(surefireReportsDir)
                 .filter(file => file.startsWith('TEST-') && file.endsWith('.xml'));
             
+            console.log(`[Java Adapter] Found ${xmlFiles.length} XML report files: ${xmlFiles.join(', ')}`);
+            
             for (const xmlFile of xmlFiles) {
                 const xmlPath = path.join(surefireReportsDir, xmlFile);
+                console.log(`[Java Adapter] Reading XML report: ${xmlFile}`);
                 const xmlContent = fs.readFileSync(xmlPath, 'utf-8');
                 tests.push(...this.parseJUnitXML(xmlContent));
             }
+        } else {
+            console.log(`[Java Adapter] Report directory does not exist`);
         }
 
         // Fallback: parse from stdout (but match with discovered tests)
@@ -199,6 +206,7 @@ export class JavaTestAdapter implements TestAdapter {
         let match;
         while ((match = testCaseRegex.exec(xmlContent)) !== null) {
             const [, name, className, time, content] = match;
+            console.log(`[Java Adapter] XML parsing: name="${name}", className="${className}"`);
             const fullName = `${className}.${name}`;
             
             let status: 'passed' | 'failed' | 'skipped' = 'passed';
