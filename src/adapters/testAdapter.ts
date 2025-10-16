@@ -24,7 +24,7 @@ export type TestState = 'not-run' | 'running' | 'passed' | 'failed' | 'error' | 
  */
 export interface TestCase {
     name: string;
-    status: 'passed' | 'failed' | 'skipped';
+    status: 'passed' | 'failed' | 'skipped' | 'error';
     errorType?: 'assertion' | 'exception'; // Distinguish between test failure and error
     duration?: number;
     message?: string;

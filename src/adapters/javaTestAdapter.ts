@@ -116,12 +116,23 @@ export class JavaTestAdapter implements TestAdapter {
         // Always parse the output, whether tests passed or failed
         const result = this.parseTestOutput(stdout, stderr, directory);
         
-        // Validate: if we discovered tests but got no results, it's a real error
+        // Validate: if we discovered tests but got no results, show them as errors
         if (this.discoveredTests.length > 0 && result.tests.length === 0) {
-            throw new Error(
-                `Test execution failed: Discovered ${this.discoveredTests.length} tests but got no results. ` +
-                `This may indicate a Maven configuration issue or missing dependencies.`
-            );
+            const errorMessage = `Test execution failed: Discovered ${this.discoveredTests.length} tests but got no results. ` +
+                `This may indicate a Maven configuration issue or missing dependencies.`;
+            
+            // Return discovered tests with error status instead of throwing
+            return {
+                tests: this.discoveredTests.map(test => ({
+                    name: test.name,
+                    status: 'error' as const,
+                    message: errorMessage
+                })),
+                totalTests: this.discoveredTests.length,
+                passedTests: 0,
+                failedTests: 0,
+                skippedTests: 0
+            };
         }
         
         return result;
@@ -151,7 +162,20 @@ export class JavaTestAdapter implements TestAdapter {
         // Filter to only include tests that were discovered
         // This prevents phantom "Failed Test 1" entries from appearing
         const discoveredTestNames = new Set(this.discoveredTests.map(t => t.name));
-        tests = tests.filter(test => discoveredTestNames.has(test.name));
+        
+        // Debug logging to help diagnose matching issues
+        console.log(`[Java Adapter] Discovered tests: ${Array.from(discoveredTestNames).join(', ')}`);
+        console.log(`[Java Adapter] Parsed tests before filtering: ${tests.map(t => t.name).join(', ')}`);
+        
+        const filteredTests = tests.filter(test => discoveredTestNames.has(test.name));
+        
+        // Log which tests were filtered out
+        const filteredOut = tests.filter(test => !discoveredTestNames.has(test.name));
+        if (filteredOut.length > 0) {
+            console.warn(`[Java Adapter] Filtered out ${filteredOut.length} tests that weren't discovered: ${filteredOut.map(t => t.name).join(', ')}`);
+        }
+        
+        tests = filteredTests;
 
         const passedTests = tests.filter(t => t.status === 'passed').length;
         const failedTests = tests.filter(t => t.status === 'failed').length;

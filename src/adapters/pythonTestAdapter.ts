@@ -95,12 +95,23 @@ export class PythonTestAdapter implements TestAdapter {
         // Always parse the output, whether tests passed or failed
         const result = this.parseTestOutput(stdout, stderr, directory);
         
-        // Validate: if we discovered tests but got no results, it's a real error
+        // Validate: if we discovered tests but got no results, show them as errors
         if (this.discoveredTests.length > 0 && result.tests.length === 0) {
-            throw new Error(
-                `Test execution failed: Discovered ${this.discoveredTests.length} tests but got no results. ` +
-                `This may indicate a Python environment issue or missing test dependencies.`
-            );
+            const errorMessage = `Test execution failed: Discovered ${this.discoveredTests.length} tests but got no results. ` +
+                `This may indicate a Python environment issue or missing test dependencies.`;
+            
+            // Return discovered tests with error status instead of throwing
+            return {
+                tests: this.discoveredTests.map(test => ({
+                    name: test.name,
+                    status: 'error' as const,
+                    message: errorMessage
+                })),
+                totalTests: this.discoveredTests.length,
+                passedTests: 0,
+                failedTests: 0,
+                skippedTests: 0
+            };
         }
         
         return result;
