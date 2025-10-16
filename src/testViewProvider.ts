@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 import {
     TestAdapter,
     TestResult,
@@ -12,6 +14,8 @@ import { TelemetryService } from './telemetry/telemetryService';
 import { getConfig } from './config';
 import { getApiClient } from './apiClient';
 import { commitAndPushTestResults, isGitRepository } from './gitHelper';
+
+const execAsync = promisify(exec);
 
 export class TestViewProvider implements vscode.WebviewViewProvider {
     private _view?: vscode.WebviewView;
@@ -100,6 +104,9 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
         try {
             const discoveredTests = await this.testAdapter.discoverTests(testDirectory);
             
+            // Make test files read-only
+            await this.makeTestFilesReadOnly(discoveredTests.map(t => t.filePath));
+            
             // Send discovered tests to webview with initial "not-run" state
             this._view.webview.postMessage({
                 type: 'testsDiscovered',
@@ -111,6 +118,25 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
             });
         } catch (error) {
             console.error('Failed to discover tests:', error);
+        }
+    }
+
+    private async makeTestFilesReadOnly(testFilePaths: string[]): Promise<void> {
+        for (const filePath of testFilePaths) {
+            try {
+                // Use sudo chmod to set read-only (444 = r--r--r--)
+                await execAsync(`sudo chmod 444 "${filePath}"`);
+                console.log(`Made test file read-only: ${filePath}`);
+            } catch (error) {
+                console.warn(`Failed to make test file read-only: ${filePath}`, error);
+                // Continue even if chmod fails (might not be on Linux/Mac)
+            }
+        }
+        
+        if (testFilePaths.length > 0) {
+            vscode.window.showInformationMessage(
+                `Test files are now read-only to prevent accidental modifications.`
+            );
         }
     }
 
