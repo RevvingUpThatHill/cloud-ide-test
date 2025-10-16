@@ -245,18 +245,13 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
     }
 
     private getTestDirectory(): string | null {
-        const activeEditor = vscode.window.activeTextEditor;
-        let testDirectory = '';
-
-        if (activeEditor) {
-            testDirectory = vscode.workspace.getWorkspaceFolder(
-                activeEditor.document.uri
-            )?.uri.fsPath || '';
-        } else if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
-            testDirectory = vscode.workspace.workspaceFolders[0].uri.fsPath;
+        // Always use the first workspace folder as the test directory
+        // This ensures we get the user's actual workspace, not any internal IDE files
+        if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
+            return vscode.workspace.workspaceFolders[0].uri.fsPath;
         }
 
-        return testDirectory || null;
+        return null;
     }
 
     public async runTests() {
