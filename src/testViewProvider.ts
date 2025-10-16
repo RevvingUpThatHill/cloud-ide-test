@@ -10,6 +10,8 @@ import {
 } from './adapters';
 import { TelemetryService } from './telemetry/telemetryService';
 import { getConfig } from './config';
+import { getApiClient } from './apiClient';
+import { commitAndPushTestResults, isGitRepository } from './gitHelper';
 
 export class TestViewProvider implements vscode.WebviewViewProvider {
     private _view?: vscode.WebviewView;
@@ -183,6 +185,45 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
             }
 
             telemetry.sendOperationEnd(operationId, 'test.execution', duration);
+
+            // Send execution record to Revature API
+            const apiClient = getApiClient();
+            const testMessage = `Tests run: ${results.totalTests}, Passed: ${results.passedTests}, Failed: ${results.failedTests}, Errored: 0, Skipped: ${results.skippedTests}`;
+            
+            // Send execution record asynchronously (don't block on this)
+            apiClient.sendExecutionRecord(
+                testDirectory,
+                testMessage,
+                results.passedTests,
+                results.totalTests,
+                results.failedTests,
+                0, // erroredCount - we don't track this separately yet
+                results.skippedTests
+            ).catch(error => {
+                console.error('Failed to send execution record to API:', error);
+            });
+
+            // Commit and push to git (if it's a git repository)
+            isGitRepository(testDirectory).then(isGit => {
+                if (isGit) {
+                    commitAndPushTestResults(
+                        testDirectory,
+                        results.totalTests,
+                        results.passedTests,
+                        results.failedTests,
+                        results.skippedTests
+                    ).catch(error => {
+                        console.error('Git commit/push failed:', error);
+                    });
+                } else {
+                    // Show warning if not a git repository
+                    vscode.window.showWarningMessage(
+                        'Cloud IDE Test: Workspace is not a git repository. Test results will not be committed.'
+                    );
+                }
+            }).catch(error => {
+                console.error('Failed to check git status:', error);
+            });
 
             // Send results back to the webview
             this._view.webview.postMessage({

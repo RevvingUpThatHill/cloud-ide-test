@@ -6,6 +6,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 
 export interface LabConfig {
     workspaceType: 'Java' | 'Angular' | 'Python';
@@ -20,6 +21,12 @@ export interface ExtensionConfig {
         enabled: boolean;
         aiKey: string;
         endpoint: string;
+    };
+    
+    // Revature API configuration
+    api: {
+        enabled: boolean;
+        baseUrl: string;
     };
     
     // Extension metadata
@@ -91,6 +98,30 @@ function loadLabConfig(): { workspaceType: string | null; warning: string | null
 }
 
 /**
+ * Check if .revature file exists
+ */
+function checkRevatureConfig(): string | null {
+    const possiblePaths = [
+        '/home/ubuntu/.revature',
+        '/root/.revature',
+        path.join(os.homedir(), '.revature')
+    ];
+
+    for (const configPath of possiblePaths) {
+        try {
+            if (fs.existsSync(configPath)) {
+                return null; // File found, no warning
+            }
+        } catch (error) {
+            // Ignore errors, continue checking
+        }
+    }
+
+    // File not found in any location
+    return '.revature configuration file not found. Cloud lab API integration will be disabled. Running in local development mode.';
+}
+
+/**
  * Load and validate configuration from .lab.json and environment variables
  * Defaults to Python if .lab.json is not found or invalid
  */
@@ -106,6 +137,12 @@ export function loadConfig(packageJson: any): ExtensionConfig {
         warnings.push(labConfigResult.warning);
     }
 
+    // Check for .revature file
+    const revatureWarning = checkRevatureConfig();
+    if (revatureWarning) {
+        warnings.push(revatureWarning);
+    }
+
     // Load telemetry configuration from environment variables
     const aiKey = process.env.TELEMETRY_AI_KEY || '';
     const telemetryEnabled = aiKey !== '';
@@ -114,6 +151,15 @@ export function loadConfig(packageJson: any): ExtensionConfig {
     // Validate telemetry endpoint format
     if (telemetryEnabled && !isValidUrl(telemetryEndpoint)) {
         errors.push(`TELEMETRY_ENDPOINT must be a valid URL, got: "${telemetryEndpoint}"`);
+    }
+
+    // Load Revature API configuration from environment variables
+    const apiBaseUrl = process.env.REVATURE_API_BASE_URL || 'https://dev-api.evolvtalent.ai';
+    const apiEnabled = process.env.REVATURE_API_ENABLED !== 'false'; // Enabled by default
+
+    // Validate API base URL format
+    if (apiEnabled && !isValidUrl(apiBaseUrl)) {
+        errors.push(`REVATURE_API_BASE_URL must be a valid URL, got: "${apiBaseUrl}"`);
     }
 
     // Load extension metadata (REQUIRED)
@@ -141,6 +187,10 @@ export function loadConfig(packageJson: any): ExtensionConfig {
             aiKey: aiKey,
             endpoint: telemetryEndpoint
         },
+        api: {
+            enabled: apiEnabled,
+            baseUrl: apiBaseUrl
+        },
         extensionId,
         extensionVersion,
         warnings
@@ -153,6 +203,10 @@ export function loadConfig(packageJson: any): ExtensionConfig {
             enabled: config.telemetry.enabled,
             aiKey: maskSensitiveData(config.telemetry.aiKey),
             endpoint: config.telemetry.endpoint
+        },
+        api: {
+            enabled: config.api.enabled,
+            baseUrl: config.api.baseUrl
         },
         extensionId: config.extensionId,
         extensionVersion: config.extensionVersion,
