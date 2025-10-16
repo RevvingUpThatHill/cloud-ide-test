@@ -363,31 +363,26 @@ window.addEventListener('message', event => {
 
 // Restore previous state when webview is reopened
 window.addEventListener('DOMContentLoaded', () => {
+    // Don't restore test states - always start fresh when webview opens
+    // The testsDiscovered message will be sent shortly after webview opens
+    
     const previousState = vscode.getState();
     if (previousState) {
-        if (previousState.testStates) {
-            // Restore test states from saved array
-            testStates = new Map(previousState.testStates);
-            renderTests();
-        }
-        if (previousState.previousTestStates) {
-            // Restore previous test states for change detection
-            previousTestStates = new Map(previousState.previousTestStates);
-        }
-        if (previousState.previousStats) {
-            // Restore previous stats for flash detection
-            previousStats = previousState.previousStats;
-        }
-        // Only show status if it's a warning or error, not from completed tests
-        if (previousState.status && (previousState.status.type === 'warning' || previousState.status.type === 'error')) {
-            showStatus(previousState.status.message, previousState.status.type);
-        }
+        // Only restore persistent error state if it exists
         if (previousState.error) {
             const button = document.getElementById('runTestsBtn');
             button.disabled = true;
             const resultsEl = document.getElementById('results');
             resultsEl.innerHTML = `<div class="no-results">${escapeHtml(previousState.error)}</div>`;
         }
+        // Only restore warning/error status messages (not test completion messages)
+        if (previousState.status && (previousState.status.type === 'warning' || previousState.status.type === 'error')) {
+            showStatus(previousState.status.message, previousState.status.type);
+        }
     }
+    
+    // Show "Discovering tests..." message until testsDiscovered arrives
+    const resultsEl = document.getElementById('results');
+    resultsEl.innerHTML = '<div class="no-results">Discovering tests...</div>';
 });
 

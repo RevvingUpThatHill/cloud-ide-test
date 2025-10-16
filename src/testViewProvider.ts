@@ -6,6 +6,7 @@ import { promisify } from 'util';
 import {
     TestAdapter,
     TestResult,
+    DiscoveredTest,
     JavaTestAdapter,
     AngularTestAdapter,
     PythonTestAdapter
@@ -17,6 +18,17 @@ import { commitAndPushTestResults, isGitRepository } from './gitHelper';
 
 const execAsync = promisify(exec);
 
+interface TestState {
+    name: string;
+    filePath: string;
+    state: 'not-run' | 'running' | 'passed' | 'failed' | 'error' | 'skipped';
+    message?: string;
+    duration?: number;
+    expected?: string;
+    actual?: string;
+    errorType?: string;
+}
+
 export class TestViewProvider implements vscode.WebviewViewProvider {
     private _view?: vscode.WebviewView;
     private workspaceType: string;
@@ -25,6 +37,10 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
     private workspaceTypeDisplay: string;
     private readOnlyTestFiles: Set<string> = new Set();
     private originalTestContent: Map<string, string> = new Map();
+    
+    // Persistent test state - survives webview disposal
+    private discoveredTests: DiscoveredTest[] = [];
+    private testStates: Map<string, TestState> = new Map();
 
     constructor(
         private readonly _extensionUri: vscode.Uri, 
@@ -59,16 +75,22 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
         console.log(`[Test Discovery] Using workspace directory: ${testDirectory}`);
 
         try {
-            const discoveredTests = await this.testAdapter.discoverTests(testDirectory);
-            console.log(`[Test Discovery] Discovered ${discoveredTests.length} tests at extension activation`);
+            this.discoveredTests = await this.testAdapter.discoverTests(testDirectory);
+            console.log(`[Test Discovery] Discovered ${this.discoveredTests.length} tests at extension activation`);
             
-            // Log the test file paths
-            discoveredTests.forEach(test => {
+            // Initialize test states
+            this.testStates.clear();
+            this.discoveredTests.forEach(test => {
                 console.log(`[Test Discovery] Test: ${test.name}, File: ${test.filePath}`);
+                this.testStates.set(test.name, {
+                    name: test.name,
+                    filePath: test.filePath,
+                    state: 'not-run'
+                });
             });
             
             // Make test files read-only
-            await this.makeTestFilesReadOnly(discoveredTests.map(t => t.filePath));
+            await this.makeTestFilesReadOnly(this.discoveredTests.map(t => t.filePath));
         } catch (error) {
             console.error('Failed to discover tests on activation:', error);
         }
@@ -130,29 +152,12 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
             return;
         }
 
-        const testDirectory = this.getTestDirectory();
-        if (!testDirectory) {
-            return;
-        }
-
-        try {
-            const discoveredTests = await this.testAdapter.discoverTests(testDirectory);
-            
-            // Make test files read-only
-            await this.makeTestFilesReadOnly(discoveredTests.map(t => t.filePath));
-            
-            // Send discovered tests to webview with initial "not-run" state
-            this._view.webview.postMessage({
-                type: 'testsDiscovered',
-                tests: discoveredTests.map(test => ({
-                    name: test.name,
-                    filePath: test.filePath,
-                    state: 'not-run'
-                }))
-            });
-        } catch (error) {
-            console.error('Failed to discover tests:', error);
-        }
+        // Send cached test states to the webview (no need to re-discover)
+        const tests = Array.from(this.testStates.values());
+        this._view.webview.postMessage({
+            type: 'testsDiscovered',
+            tests: tests
+        });
     }
 
     private async makeTestFilesReadOnly(testFilePaths: string[]): Promise<void> {
@@ -360,6 +365,18 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
                 }
             }).catch(error => {
                 console.error('Failed to check git status:', error);
+            });
+
+            // Update cached test states with results
+            results.tests.forEach(test => {
+                const existingState = this.testStates.get(test.name);
+                if (existingState) {
+                    existingState.state = test.status;
+                    existingState.message = test.message;
+                    existingState.duration = test.duration;
+                    existingState.expected = test.expected;
+                    existingState.actual = test.actual;
+                }
             });
 
             // Send results back to the webview
