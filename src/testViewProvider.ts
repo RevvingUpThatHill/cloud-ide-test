@@ -24,6 +24,7 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
     private configWarnings: string[];
     private workspaceTypeDisplay: string;
     private readOnlyTestFiles: Set<string> = new Set();
+    private originalTestContent: Map<string, string> = new Map();
 
     constructor(
         private readonly _extensionUri: vscode.Uri, 
@@ -136,6 +137,15 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
             // Track this as a read-only file
             this.readOnlyTestFiles.add(filePath);
             
+            // Store original content
+            try {
+                const content = fs.readFileSync(filePath, 'utf8');
+                this.originalTestContent.set(filePath, content);
+                console.log(`Stored original content for: ${filePath}`);
+            } catch (error) {
+                console.warn(`Failed to read test file content: ${filePath}`, error);
+            }
+            
             try {
                 // Set read-only at OS level (Linux/Mac)
                 await execAsync(`sudo chmod 444 "${filePath}"`);
@@ -148,8 +158,8 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
     }
 
     private setupReadOnlyProtection(context: vscode.ExtensionContext): void {
-        // Monitor all text document changes and prevent edits to test files
-        const disposable = vscode.workspace.onDidChangeTextDocument(async (event) => {
+        // Monitor text changes and revert immediately
+        const changeDisposable = vscode.workspace.onDidChangeTextDocument(async (event) => {
             const filePath = event.document.uri.fsPath;
             
             if (this.readOnlyTestFiles.has(filePath) && event.contentChanges.length > 0) {
@@ -158,19 +168,34 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
                     `Test file "${path.basename(filePath)}" is read-only and cannot be modified.`
                 );
                 
-                // Undo the changes
-                const edit = new vscode.WorkspaceEdit();
-                for (const change of event.contentChanges) {
-                    edit.delete(event.document.uri, change.range);
-                    if (change.text) {
-                        edit.insert(event.document.uri, change.range.start, '');
-                    }
+                // Revert to original content
+                const original = this.originalTestContent.get(filePath);
+                if (original !== undefined) {
+                    const fullRange = new vscode.Range(
+                        event.document.positionAt(0),
+                        event.document.positionAt(event.document.getText().length)
+                    );
+                    
+                    const edit = new vscode.WorkspaceEdit();
+                    edit.replace(event.document.uri, fullRange, original);
+                    await vscode.workspace.applyEdit(edit);
                 }
-                await vscode.workspace.applyEdit(edit);
             }
         });
         
-        context.subscriptions.push(disposable);
+        // Also prevent saves
+        const saveDisposable = vscode.workspace.onWillSaveTextDocument((event) => {
+            const filePath = event.document.uri.fsPath;
+            if (this.readOnlyTestFiles.has(filePath)) {
+                vscode.window.showErrorMessage(
+                    `Cannot save test file "${path.basename(filePath)}" - it is read-only.`
+                );
+                // Prevent the save
+                event.waitUntil(Promise.reject(new Error('File is read-only')));
+            }
+        });
+        
+        context.subscriptions.push(changeDisposable, saveDisposable);
     }
 
     private getTestDirectory(): string | null {
