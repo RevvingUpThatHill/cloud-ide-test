@@ -107,7 +107,7 @@ export class PythonTestAdapter implements TestAdapter {
     }
 
     private parseTestOutput(stdout: string, stderr: string, directory: string): TestResult {
-        const tests: TestCase[] = [];
+        let tests: TestCase[] = [];
         
         // Try to parse pytest XML report if available
         const xmlPath = path.join(directory, 'test-results.xml');
@@ -124,8 +124,13 @@ export class PythonTestAdapter implements TestAdapter {
 
         // Fallback: parse from unittest console output
         if (tests.length === 0) {
-            tests.push(...this.parseUnittestConsoleOutput(stdout, stderr));
+            tests = this.parseUnittestConsoleOutput(stdout, stderr);
         }
+
+        // Filter to only include tests that were discovered
+        // This prevents phantom "Failed Test 1" entries from appearing
+        const discoveredTestNames = new Set(this.discoveredTests.map(t => t.name));
+        tests = tests.filter(test => discoveredTestNames.has(test.name));
 
         const passedTests = tests.filter(t => t.status === 'passed').length;
         const failedTests = tests.filter(t => t.status === 'failed').length;

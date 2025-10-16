@@ -114,7 +114,7 @@ export class AngularTestAdapter implements TestAdapter {
     }
 
     private parseTestOutput(stdout: string, stderr: string, directory: string): TestResult {
-        const tests: TestCase[] = [];
+        let tests: TestCase[] = [];
         
         // Try to parse Karma JUnit XML reports if configured
         const resultsDir = path.join(directory, 'test-results');
@@ -131,8 +131,13 @@ export class AngularTestAdapter implements TestAdapter {
 
         // Fallback: parse from Karma console output
         if (tests.length === 0) {
-            tests.push(...this.parseKarmaConsoleOutput(stdout));
+            tests = this.parseKarmaConsoleOutput(stdout);
         }
+
+        // Filter to only include tests that were discovered
+        // This prevents phantom "Failed Test 1" entries from appearing
+        const discoveredTestNames = new Set(this.discoveredTests.map(t => t.name));
+        tests = tests.filter(test => discoveredTestNames.has(test.name));
 
         const passedTests = tests.filter(t => t.status === 'passed').length;
         const failedTests = tests.filter(t => t.status === 'failed').length;

@@ -41,8 +41,16 @@ export class JavaTestAdapter implements TestAdapter {
             const content = fs.readFileSync(filePath, 'utf8');
             const lines = content.split('\n');
             
+            let packageName = '';
             let currentClass = '';
+            
             for (const line of lines) {
+                // Find package declaration
+                const packageMatch = /package\s+([\w.]+);/.exec(line);
+                if (packageMatch) {
+                    packageName = packageMatch[1];
+                }
+                
                 // Find test classes
                 const classMatch = /public\s+class\s+(\w+)/.exec(line);
                 if (classMatch) {
@@ -56,7 +64,9 @@ export class JavaTestAdapter implements TestAdapter {
                     if (nextLineIndex < lines.length) {
                         const methodMatch = /public\s+void\s+(\w+)\s*\(/.exec(lines[nextLineIndex]);
                         if (methodMatch && currentClass) {
-                            const testName = `${currentClass}.${methodMatch[1]}`;
+                            // Use fully qualified class name to match Maven XML reports
+                            const fullClassName = packageName ? `${packageName}.${currentClass}` : currentClass;
+                            const testName = `${fullClassName}.${methodMatch[1]}`;
                             tests.push({
                                 name: testName,
                                 filePath: path.relative(directory, filePath)
@@ -118,7 +128,7 @@ export class JavaTestAdapter implements TestAdapter {
     }
 
     private parseTestOutput(stdout: string, stderr: string, directory: string): TestResult {
-        const tests: TestCase[] = [];
+        let tests: TestCase[] = [];
         
         // Try to parse JUnit XML reports if available
         const surefireReportsDir = path.join(directory, 'target', 'surefire-reports');
@@ -133,10 +143,15 @@ export class JavaTestAdapter implements TestAdapter {
             }
         }
 
-        // Fallback: parse from stdout
+        // Fallback: parse from stdout (but match with discovered tests)
         if (tests.length === 0) {
-            tests.push(...this.parseConsoleOutput(stdout));
+            tests = this.parseConsoleOutput(stdout);
         }
+
+        // Filter to only include tests that were discovered
+        // This prevents phantom "Failed Test 1" entries from appearing
+        const discoveredTestNames = new Set(this.discoveredTests.map(t => t.name));
+        tests = tests.filter(test => discoveredTestNames.has(test.name));
 
         const passedTests = tests.filter(t => t.status === 'passed').length;
         const failedTests = tests.filter(t => t.status === 'failed').length;
