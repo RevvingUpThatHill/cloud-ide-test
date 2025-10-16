@@ -1,5 +1,5 @@
 /**
- * Configuration module - Loads configuration from .lab.json and environment variables
+ * Configuration module - Auto-detects workspace type and loads environment variables
  * Validates all required configuration on extension startup
  */
 
@@ -7,10 +7,6 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-
-export interface LabConfig {
-    workspaceType: 'Java' | 'Angular' | 'Python';
-}
 
 export interface ExtensionConfig {
     // Workspace configuration
@@ -48,53 +44,64 @@ export class ConfigurationError extends Error {
 }
 
 /**
- * Load .lab.json configuration from workspace root
+ * Auto-detect workspace type based on build configuration files
+ * Priority: package.json (Angular) > pom.xml/build.gradle (Java) > default to Python
  */
-function loadLabConfig(): { workspaceType: string | null; warning: string | null } {
+function detectWorkspaceType(): { workspaceType: 'Java' | 'Angular' | 'Python'; detectionMethod: string } {
     const workspaceFolders = vscode.workspace.workspaceFolders;
     
     if (!workspaceFolders || workspaceFolders.length === 0) {
         return { 
-            workspaceType: null, 
-            warning: 'No workspace folder found. Defaulting to "Python (default)".' 
+            workspaceType: 'Python', 
+            detectionMethod: 'default (no workspace folder)' 
         };
     }
 
     const workspaceRoot = workspaceFolders[0].uri.fsPath;
-    const labConfigPath = path.join(workspaceRoot, '.lab.json');
-
-    if (!fs.existsSync(labConfigPath)) {
+    
+    // Check for Angular (package.json with @angular dependencies)
+    const packageJsonPath = path.join(workspaceRoot, 'package.json');
+    if (fs.existsSync(packageJsonPath)) {
+        try {
+            const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+            const dependencies = { ...packageJson.dependencies, ...packageJson.devDependencies };
+            
+            // Check if it's an Angular project
+            if (dependencies['@angular/core'] || dependencies['@angular/cli']) {
+                return { 
+                    workspaceType: 'Angular', 
+                    detectionMethod: 'auto-detected (package.json with @angular)' 
+                };
+            }
+        } catch (error) {
+            console.warn('Failed to parse package.json:', error);
+        }
+    }
+    
+    // Check for Java (pom.xml or build.gradle)
+    const pomXmlPath = path.join(workspaceRoot, 'pom.xml');
+    const buildGradlePath = path.join(workspaceRoot, 'build.gradle');
+    const buildGradleKtsPath = path.join(workspaceRoot, 'build.gradle.kts');
+    
+    if (fs.existsSync(pomXmlPath)) {
         return { 
-            workspaceType: null, 
-            warning: '.lab.json file not found in workspace root. Defaulting to "Python (default)". Create a .lab.json file with {"workspaceType": "Java"}, {"workspaceType": "Angular"}, or {"workspaceType": "Python"}.' 
+            workspaceType: 'Java', 
+            detectionMethod: 'auto-detected (pom.xml)' 
         };
     }
-
-    try {
-        const fileContent = fs.readFileSync(labConfigPath, 'utf8');
-        const labConfig: LabConfig = JSON.parse(fileContent);
-
-        if (!labConfig.workspaceType) {
-            return { 
-                workspaceType: null, 
-                warning: '.lab.json is missing "workspaceType" property. Defaulting to "Python (default)".' 
-            };
-        }
-
-        if (!['Java', 'Angular', 'Python'].includes(labConfig.workspaceType)) {
-            return { 
-                workspaceType: null, 
-                warning: `.lab.json has invalid workspaceType "${labConfig.workspaceType}". Must be "Java", "Angular", or "Python". Defaulting to "Python (default)".` 
-            };
-        }
-
-        return { workspaceType: labConfig.workspaceType, warning: null };
-    } catch (error) {
+    
+    if (fs.existsSync(buildGradlePath) || fs.existsSync(buildGradleKtsPath)) {
         return { 
-            workspaceType: null, 
-            warning: `.lab.json is invalid JSON: ${error instanceof Error ? error.message : String(error)}. Defaulting to "Python (default)".` 
+            workspaceType: 'Java', 
+            detectionMethod: 'auto-detected (build.gradle)' 
         };
     }
+    
+    // Default to Python if no other indicators found
+    return { 
+        workspaceType: 'Python', 
+        detectionMethod: 'default (no build files detected)' 
+    };
 }
 
 /**
@@ -122,20 +129,18 @@ function checkRevatureConfig(): string | null {
 }
 
 /**
- * Load and validate configuration from .lab.json and environment variables
- * Defaults to Python if .lab.json is not found or invalid
+ * Load and validate configuration - auto-detects workspace type from build files
+ * Defaults to Python if no build files are detected
  */
 export function loadConfig(packageJson: any): ExtensionConfig {
     const errors: string[] = [];
     const warnings: string[] = [];
 
-    // Load workspace type from .lab.json (defaults to Python)
-    const labConfigResult = loadLabConfig();
-    let workspaceType = labConfigResult.workspaceType || 'Python';
+    // Auto-detect workspace type from build configuration files
+    const detection = detectWorkspaceType();
+    const workspaceType = detection.workspaceType;
     
-    if (labConfigResult.warning) {
-        warnings.push(labConfigResult.warning);
-    }
+    console.log(`Workspace type: ${workspaceType} (${detection.detectionMethod})`);
 
     // Check for .revature file
     const revatureWarning = checkRevatureConfig();

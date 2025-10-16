@@ -34,13 +34,8 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
         // Get configuration (already validated at extension startup)
         const config = getConfig();
         this.workspaceType = config.workspaceType;
+        this.workspaceTypeDisplay = config.workspaceType;
         this.configWarnings = configWarnings;
-        
-        // Determine display name (add "default" label if workspace_type was not set)
-        const hasWorkspaceTypeWarning = configWarnings.some(w => w.includes('workspace_type'));
-        this.workspaceTypeDisplay = hasWorkspaceTypeWarning 
-            ? `${config.workspaceType} (default)` 
-            : config.workspaceType;
         
         // Initialize the appropriate test adapter
         this.testAdapter = this.getTestAdapter(config.workspaceType);
