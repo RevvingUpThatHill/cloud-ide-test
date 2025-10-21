@@ -118,17 +118,16 @@ button:disabled {
 
 .stat-item {
     background-color: var(--vscode-textCodeBlock-background);
-    padding: 6px;
+    padding: 8px 6px;
     border-radius: 4px;
     text-align: center;
     border: 1px solid var(--vscode-panel-border);
-    /* Fixed height, expand horizontally to fill available width */
-    min-height: 50px;
-    height: 50px;
+    /* Compact height, expand horizontally to fill available width */
     display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: center;
+    gap: 2px;
 }
 
 .stat-value {
