@@ -79,9 +79,9 @@ export class PythonTestAdapter implements TestAdapter {
             const srcPath = path.join(directory, 'src');
             
             const command = `
-                (cd "${srcPath}" && python3 -m unittest discover -s test -t . -p "*test*.py" -v) 2>/dev/null || \
-                (cd "${directory}" && PYTHONPATH="${srcPath}:${directory}" python3 -m unittest discover -s test -t . -p "*test*.py" -v) 2>/dev/null || \
-                (cd "${directory}" && python3 -m unittest discover -s test -t . -p "*test*.py" -v) || \
+                (cd "${srcPath}" && python3 -m unittest discover -s test -p "*test*.py" -v) 2>/dev/null || \
+                (cd "${directory}" && PYTHONPATH="${srcPath}:${directory}" python3 -m unittest discover -s test -p "*test*.py" -v) 2>/dev/null || \
+                (cd "${directory}" && python3 -m unittest discover -s test -p "*test*.py" -v) || \
                 (cd "${srcPath}" && python3 -m pytest test --verbose --junit-xml=../test-results.xml) 2>/dev/null || \
                 (cd "${directory}" && python3 -m pytest test --verbose --junit-xml=test-results.xml)
             `.replace(/\n/g, ' ').trim();
@@ -104,9 +104,9 @@ export class PythonTestAdapter implements TestAdapter {
                 console.error('[Python Adapter] Test command failed with no output:');
                 console.error('Error:', error.message);
                 console.error('Tried multiple directory structures:');
-                console.error('  1. cd src && python3 -m unittest discover -s test -t . -p "*test*.py" -v');
-                console.error('  2. PYTHONPATH=src python3 -m unittest discover -s test -t . -p "*test*.py" -v (from root)');
-                console.error('  3. python3 -m unittest discover -s test -t . -p "*test*.py" -v (from root)');
+                console.error('  1. cd src && python3 -m unittest discover -s test -p "*test*.py" -v');
+                console.error('  2. PYTHONPATH=src python3 -m unittest discover -s test -p "*test*.py" -v (from root)');
+                console.error('  3. python3 -m unittest discover -s test -p "*test*.py" -v (from root)');
                 console.error('Working directory:', directory);
                 throw new Error(`Failed to run tests: ${error.message}`);
             }
