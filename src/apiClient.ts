@@ -114,6 +114,15 @@ export class ApiClient {
             console.log('Successfully sent execution record to API');
         } catch (error) {
             console.error('Failed to send execution record:', error);
+            console.error('Request details:', {
+                url: `${this.baseUrl}${endpoint}`,
+                method: 'POST',
+                headers: {
+                    'x-api-key': this.apiKey ? `${this.apiKey.substring(0, 8)}...` : 'NOT_SET',
+                    'Content-Type': 'application/json'
+                },
+                payload: JSON.stringify(payload, null, 2)
+            });
         }
     }
 
@@ -169,6 +178,15 @@ export class ApiClient {
             console.log(`Successfully sent session data: ${sessionEvent}`);
         } catch (error) {
             console.error('Failed to send session data:', error);
+            console.error('Request details:', {
+                url: `${this.baseUrl}${endpoint}`,
+                method: 'POST',
+                headers: {
+                    'x-api-key': this.apiKey ? `${this.apiKey.substring(0, 8)}...` : 'NOT_SET',
+                    'Content-Type': 'application/json'
+                },
+                payload: JSON.stringify(payload, null, 2)
+            });
         }
     }
 
@@ -203,7 +221,13 @@ export class ApiClient {
                     if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
                         resolve();
                     } else {
-                        reject(new Error(`API request failed with status ${res.statusCode}: ${data}`));
+                        const errorDetails = {
+                            statusCode: res.statusCode,
+                            statusMessage: res.statusMessage,
+                            headers: res.headers,
+                            body: data
+                        };
+                        reject(new Error(`API request failed with status ${res.statusCode}: ${JSON.stringify(errorDetails, null, 2)}`));
                     }
                 });
             });

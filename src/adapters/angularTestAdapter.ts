@@ -95,6 +95,10 @@ export class AngularTestAdapter implements TestAdapter {
             stderr = error.stderr || '';
             
             if (!stdout && !stderr) {
+                console.error('[Angular Adapter] Test command failed with no output:');
+                console.error('Error:', error.message);
+                console.error('Command:', 'npm run test -- --watch=false --browsers=ChromeHeadless');
+                console.error('Working directory:', directory);
                 throw new Error(`Failed to run Angular tests: ${error.message}`);
             }
         }
@@ -106,6 +110,13 @@ export class AngularTestAdapter implements TestAdapter {
         if (this.discoveredTests.length > 0 && result.tests.length === 0) {
             const errorMessage = `Test execution failed: Discovered ${this.discoveredTests.length} tests but got no results. ` +
                 `This may indicate an Angular/Karma configuration issue or missing dependencies.`;
+            
+            console.error('[Angular Adapter] Test execution error - Full output:');
+            console.error('=== STDOUT ===');
+            console.error(stdout || '(empty)');
+            console.error('=== STDERR ===');
+            console.error(stderr || '(empty)');
+            console.error('=== END OUTPUT ===');
             
             // Return discovered tests with error status instead of throwing
             return {

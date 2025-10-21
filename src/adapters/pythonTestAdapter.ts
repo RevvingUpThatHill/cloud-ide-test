@@ -88,6 +88,10 @@ export class PythonTestAdapter implements TestAdapter {
             
             // Only throw if there's truly no output (command not found, etc.)
             if (!stdout && !stderr) {
+                console.error('[Python Adapter] Test command failed with no output:');
+                console.error('Error:', error.message);
+                console.error('Command:', 'python3 -m unittest discover -s src/test -p "*test*.py" -v || python3 -m pytest src/test --verbose --junit-xml=test-results.xml');
+                console.error('Working directory:', directory);
                 throw new Error(`Failed to run tests: ${error.message}`);
             }
         }
@@ -99,6 +103,13 @@ export class PythonTestAdapter implements TestAdapter {
         if (this.discoveredTests.length > 0 && result.tests.length === 0) {
             const errorMessage = `Test execution failed: Discovered ${this.discoveredTests.length} tests but got no results. ` +
                 `This may indicate a Python environment issue or missing test dependencies.`;
+            
+            console.error('[Python Adapter] Test execution error - Full output:');
+            console.error('=== STDOUT ===');
+            console.error(stdout || '(empty)');
+            console.error('=== STDERR ===');
+            console.error(stderr || '(empty)');
+            console.error('=== END OUTPUT ===');
             
             // Return discovered tests with error status instead of throwing
             return {
