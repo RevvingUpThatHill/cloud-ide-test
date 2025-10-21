@@ -71,12 +71,26 @@ export class PythonTestAdapter implements TestAdapter {
         let stderr = '';
         
         try {
-            // Run Python unittest first (built-in), fall back to pytest if available
-            // Discovery starts in src/test folder and matches any .py file containing "test"
-            const command = 'python3 -m unittest discover -s src/test -p "*test*.py" -v || python3 -m pytest src/test --verbose --junit-xml=test-results.xml';
+            // Try multiple directory structures to find where tests are located
+            // 1. src/ directory (Maven-like structure: src/main/, src/test/)
+            // 2. main/ directory (alternative structure: main/, test/)
+            // 3. Root directory (flat structure: test/ at root)
+            // Note: Each attempt is wrapped in a subshell with stderr redirected for cd failures
+            const srcPath = path.join(directory, 'src');
+            const mainPath = path.join(directory, 'main');
+            
+            const command = `
+                (cd "${srcPath}" && python3 -m unittest discover -s test -t . -p "*test*.py" -v) 2>/dev/null || \
+                (cd "${mainPath}" && python3 -m unittest discover -s ../test -t .. -p "*test*.py" -v) 2>/dev/null || \
+                (cd "${directory}" && python3 -m unittest discover -s test -t . -p "*test*.py" -v) || \
+                (cd "${srcPath}" && python3 -m pytest test --verbose --junit-xml=../test-results.xml) 2>/dev/null || \
+                (cd "${directory}" && python3 -m pytest test --verbose --junit-xml=test-results.xml)
+            `.replace(/\n/g, ' ').trim();
+            
             const result = await execAsync(command, {
                 cwd: directory,
-                maxBuffer: 10 * 1024 * 1024 // 10MB buffer
+                maxBuffer: 10 * 1024 * 1024, // 10MB buffer
+                shell: '/bin/bash' // Use bash to support cd and || chaining
             });
             stdout = result.stdout;
             stderr = result.stderr;
@@ -90,7 +104,10 @@ export class PythonTestAdapter implements TestAdapter {
             if (!stdout && !stderr) {
                 console.error('[Python Adapter] Test command failed with no output:');
                 console.error('Error:', error.message);
-                console.error('Command:', 'python3 -m unittest discover -s src/test -p "*test*.py" -v || python3 -m pytest src/test --verbose --junit-xml=test-results.xml');
+                console.error('Tried multiple directory structures:');
+                console.error('  1. cd src && python3 -m unittest discover -s test -t . -p "*test*.py" -v');
+                console.error('  2. cd main && python3 -m unittest discover -s ../test -t .. -p "*test*.py" -v');
+                console.error('  3. python3 -m unittest discover -s test -t . -p "*test*.py" -v (from root)');
                 console.error('Working directory:', directory);
                 throw new Error(`Failed to run tests: ${error.message}`);
             }

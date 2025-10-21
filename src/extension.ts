@@ -51,10 +51,10 @@ export async function activate(context: vscode.ExtensionContext) {
         });
         context.subscriptions.push(onDidSaveDisposable);
 
-        // Track workspace open event
-        apiClient.sendSessionData('onWorkspaceOpen').catch(error => {
-            console.error('Failed to send initial session data:', error);
-        });
+        // Track workspace open event - DISABLED
+        // apiClient.sendSessionData('onWorkspaceOpen').catch(error => {
+        //     console.error('Failed to send initial session data:', error);
+        // });
 
         // Register telemetry disposal
         context.subscriptions.push({
