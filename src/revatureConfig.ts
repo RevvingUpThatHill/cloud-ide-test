@@ -75,7 +75,19 @@ function parseRevatureConfig(configPath: string): RevatureConfig | null {
             const match = trimmed.match(/^([A-Z_]+)="?([^"]*)"?$/);
             if (match) {
                 const key = match[1];
-                const value = match[2];
+                let value = match[2];
+                
+                // Decode Base64-encoded fields (these are encoded in the .revature file)
+                const base64Fields = ['CLOUD_LAB_WORKSPACE_ID', 'LEARNER_CURRICULUM_ACTIVITY_ID', 'ACTIVITY_TYPE'];
+                if (base64Fields.includes(key) && value) {
+                    try {
+                        value = Buffer.from(value, 'base64').toString('utf8');
+                        console.log(`Decoded ${key}: ${value}`);
+                    } catch (error) {
+                        console.warn(`Failed to decode Base64 for ${key}, using original value`);
+                    }
+                }
+                
                 (config as any)[key] = value;
             }
         }
