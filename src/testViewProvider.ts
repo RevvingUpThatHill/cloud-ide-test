@@ -132,14 +132,14 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
             }, 100);
         }
 
-        // Display already-discovered tests when webview loads
-        setTimeout(() => {
-            this.discoverAndDisplayTests();
-        }, 200);
-
         // Handle messages from the webview
         webviewView.webview.onDidReceiveMessage(async (data) => {
             switch (data.type) {
+                case 'webviewReady':
+                    // Webview is ready, send tests immediately
+                    console.log('[TestViewProvider] Webview ready, sending tests');
+                    this.discoverAndDisplayTests();
+                    break;
                 case 'runTests':
                     await this.runTests();
                     break;

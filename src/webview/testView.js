@@ -143,7 +143,7 @@ function renderTests(options = {}) {
         
         html += `
             <div class="test-item test-${stateClass} ${flashClass}">
-                <div class="test-name">${escapeHtml(name)}</div>
+                <div class="test-name">${formatTestName(name)}</div>
                 <div class="test-status">${displayState}</div>
                 ${test.duration ? `<div class="test-duration">Duration: ${test.duration}ms</div>` : ''}
                 ${test.message ? `<div class="test-details">
@@ -240,6 +240,14 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+function formatTestName(name) {
+    // Escape HTML first
+    const escaped = escapeHtml(name);
+    // Insert zero-width space after periods to allow breaking
+    // This allows the browser to break at periods when needed
+    return escaped.replace(/\./g, '.<wbr>');
 }
 
 // Handle messages from the extension
@@ -382,5 +390,9 @@ window.addEventListener('DOMContentLoaded', () => {
     // Show "Discovering tests..." message until testsDiscovered arrives
     const resultsEl = document.getElementById('results');
     resultsEl.innerHTML = '<div class="no-results">Discovering tests...</div>';
+    
+    // Notify extension that webview is ready to receive messages
+    console.log('[Webview] Sending webviewReady message');
+    vscode.postMessage({ type: 'webviewReady' });
 });
 

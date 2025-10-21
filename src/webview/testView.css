@@ -6,6 +6,7 @@ body {
     margin: 0;
     font-size: 11px;
     background-color: var(--vscode-editor-background);
+    min-width: 280px; /* Minimum width to display summary stats comfortably */
 }
 
 /* Header section */
@@ -110,7 +111,7 @@ button:disabled {
 
 .stats-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(3, 1fr);
     gap: 6px;
     margin-top: 8px;
 }
@@ -252,6 +253,12 @@ button:disabled {
     margin-bottom: 4px;
     font-size: 11px;
     color: var(--vscode-foreground);
+    /* Allow breaking at periods (via <wbr> tags) */
+    word-break: normal;
+    overflow-wrap: break-word;
+    /* Hanging indent: continuation lines are indented */
+    padding-left: 16px;
+    text-indent: -16px;
 }
 
 .test-status {
