@@ -284,13 +284,14 @@ export class PythonTestAdapter implements TestAdapter {
         const output = stdout + '\n' + stderr;
         
         // Parse pytest output format:
-        // PASSED test/lab_test.py::TestClass::test_method
-        // FAILED test/lab_test.py::TestClass::test_method - ErrorType: message
-        const testResultPattern = /(PASSED|FAILED|SKIPPED|ERROR)\s+([^\s]+)::([\w]+)::([\w]+)(?:\s+-\s+(.+))?/g;
+        // test/lab_test.py::TestClass::test_method PASSED
+        // test/lab_test.py::TestClass::test_method FAILED - ErrorType: message
+        // Note: pytest puts the status AFTER the test name
+        const testResultPattern = /([^\s]+)::([\w]+)::([\w]+)\s+(PASSED|FAILED|SKIPPED|ERROR)(?:\s+-\s+(.+))?/g;
         
         let match;
         while ((match = testResultPattern.exec(output)) !== null) {
-            const [, result, filePath, className, methodName, errorInfo] = match;
+            const [, filePath, className, methodName, result, errorInfo] = match;
             const fullName = `${className}.${methodName}`;
             
             let status: 'passed' | 'failed' | 'skipped' = 'passed';
