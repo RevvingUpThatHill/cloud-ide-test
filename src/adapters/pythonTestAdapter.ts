@@ -115,10 +115,11 @@ export class PythonTestAdapter implements TestAdapter {
         // Always parse the output, whether tests passed or failed
         const result = this.parseTestOutput(stdout, stderr, directory);
         
-        // Validate: if we discovered tests but got no results, show them as errors
+        // Validate: if we discovered tests but got no results, show them as errors with full output
         if (this.discoveredTests.length > 0 && result.tests.length === 0) {
-            const errorMessage = `Test execution failed: Discovered ${this.discoveredTests.length} tests but got no results. ` +
-                `This may indicate a Python environment issue or missing test dependencies.`;
+            const errorMessage = `Test execution failed: Discovered ${this.discoveredTests.length} tests but got no results.\n` +
+                `This may indicate a Python environment issue or missing test dependencies.\n\n` +
+                `=== Full Test Output ===\n${stdout}\n${stderr}`;
             
             console.error('[Python Adapter] Test execution error - Full output:');
             console.error('=== STDOUT ===');
@@ -127,7 +128,7 @@ export class PythonTestAdapter implements TestAdapter {
             console.error(stderr || '(empty)');
             console.error('=== END OUTPUT ===');
             
-            // Return discovered tests with error status instead of throwing
+            // Return discovered tests with error status and full output
             return {
                 tests: this.discoveredTests.map(test => ({
                     name: test.name,
@@ -294,6 +295,8 @@ export class PythonTestAdapter implements TestAdapter {
             
             let status: 'passed' | 'failed' | 'skipped' = 'passed';
             let message = '';
+            let expected = '';
+            let actual = '';
             
             if (result === 'PASSED') {
                 status = 'passed';
@@ -302,24 +305,108 @@ export class PythonTestAdapter implements TestAdapter {
                 message = errorInfo || '';
             } else {
                 status = 'failed';
-                message = errorInfo || '';
                 
-                // Try to find the full error details in the FAILURES section
+                // Try to find the failure details in the FAILURES section
                 const failurePattern = new RegExp(
                     `_{10,}\\s+${className}\\.${methodName}\\s+_{10,}[\\s\\S]*?(?=_{10,}|={10,}|$)`,
                     'i'
                 );
                 const failureMatch = failurePattern.exec(output);
+                
                 if (failureMatch) {
-                    // Extract the full failure message
-                    message = failureMatch[0].trim();
+                    const failureSection = failureMatch[0];
+                    
+                    // Check for AssertionError (clean format with expected/actual)
+                    const assertionMatch = /self\.assertEqual\(([^,]+),\s*([^)]+)\)/i.exec(failureSection);
+                    if (assertionMatch) {
+                        // This is an assertion - extract expected and actual
+                        actual = assertionMatch[1].trim();
+                        expected = assertionMatch[2].trim();
+                        message = `Expected ${expected}, but got ${actual}`;
+                    } else {
+                        // Not an assertion - extract full context
+                        // Look for the final error line: "E   ErrorType: message"
+                        const errorLineMatch = /E\s+(\w+Error):\s*(.+?)$/m.exec(failureSection);
+                        
+                        // Look for the file and line number where the error occurred in the source code
+                        // Format: "main/lab.py:30: NameError"
+                        const sourceLocationMatch = /([^\s]+\.py):(\d+):\s*$/m.exec(failureSection);
+                        
+                        // Look for the failing line of code
+                        // Format: ">       return count" with optional "^^^^^" pointer
+                        const failingCodeMatch = />\s+(.+?)(?:\n\s+\^+)?(?:\nE\s+)/m.exec(failureSection);
+                        
+                        // Look for the function name
+                        // Format: "def function_name(param):"
+                        const functionMatch = /def\s+(\w+)\s*\([^)]*\):/m.exec(failureSection);
+                        
+                        // Look for parameter values
+                        // Format: "num = 987"
+                        const paramMatch = /^(\w+)\s*=\s*(.+?)$/m.exec(failureSection);
+                        
+                        // Look for the test file location and assertion
+                        // Format: "test/lab_test.py:11:" followed by the assertion line
+                        const testLocationMatch = /(test[^\s]*\.py):(\d+):/m.exec(failureSection);
+                        const testAssertionMatch = />\s+(self\.\w+\([^)]+\))/m.exec(failureSection);
+                        
+                        if (errorLineMatch) {
+                            const errorType = errorLineMatch[1];
+                            const errorMsg = errorLineMatch[2].trim();
+                            
+                            let messageParts = [`${errorType}: ${errorMsg}`];
+                            
+                            // Add source location with function context
+                            if (sourceLocationMatch) {
+                                const file = sourceLocationMatch[1];
+                                const line = sourceLocationMatch[2];
+                                const funcName = functionMatch ? functionMatch[1] : '';
+                                const params = paramMatch ? `${paramMatch[1]}=${paramMatch[2]}` : '';
+                                
+                                if (funcName && params) {
+                                    messageParts.push(`  at ${file}:${line} in ${funcName}(${params})`);
+                                } else if (funcName) {
+                                    messageParts.push(`  at ${file}:${line} in ${funcName}()`);
+                                } else {
+                                    messageParts.push(`  at ${file}:${line}`);
+                                }
+                            }
+                            
+                            // Add the failing line of code
+                            if (failingCodeMatch) {
+                                const failingCode = failingCodeMatch[1].trim();
+                                messageParts.push(`  → ${failingCode}`);
+                            }
+                            
+                            // Add test location and assertion
+                            if (testLocationMatch) {
+                                const testFile = testLocationMatch[1];
+                                const testLine = testLocationMatch[2];
+                                messageParts.push(`  Called from: ${testFile}:${testLine}`);
+                                
+                                if (testAssertionMatch) {
+                                    const assertion = testAssertionMatch[1].trim();
+                                    messageParts.push(`  → ${assertion}`);
+                                }
+                            }
+                            
+                            message = messageParts.join('\n');
+                        } else {
+                            // Fallback to the short error info from the summary line
+                            message = errorInfo || 'Test failed';
+                        }
+                    }
+                } else {
+                    // No detailed failure section found, use summary line
+                    message = errorInfo || 'Test failed';
                 }
             }
             
             tests.push({
                 name: fullName,
                 status,
-                message: message || undefined
+                message: message || undefined,
+                expected: expected || undefined,
+                actual: actual || undefined
             });
         }
         

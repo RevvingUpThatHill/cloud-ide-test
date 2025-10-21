@@ -4,7 +4,7 @@ const vscode = acquireVsCodeApi();
 let testStates = new Map(); // testName -> { state, message, duration, expected, actual, errorType }
 let previousTestStates = new Map(); // Store previous run results to detect changes
 let scrollAnchor = null; // { testName: string, viewportOffset: number } - captured before running
-let previousStats = { passed: 0, failed: 0, error: 0 }; // Track previous stats for flash animations
+let previousStats = { passed: 0, failed: 0 }; // Track previous stats for flash animations (failed includes errors)
 
 function runTests() {
     vscode.postMessage({ type: 'runTests' });
@@ -75,37 +75,34 @@ function renderTests(options = {}) {
     const error = Array.from(testStates.values()).filter(t => t.state === 'error').length;
     const skipped = Array.from(testStates.values()).filter(t => t.state === 'skipped').length;
     
+    // Combine errors and failures into a single "Failures" count
+    const totalFailures = failed + error;
+    
     // While tests are running, show previous stats to avoid jitter
     let displayPassed = passed;
-    let displayFailed = failed;
-    let displayError = error;
+    let displayFailed = totalFailures;
     
     if (running > 0 && !options.afterTestResults) {
         // Tests are running, show previous final stats
         displayPassed = previousStats.passed || 0;
         displayFailed = previousStats.failed || 0;
-        displayError = previousStats.error || 0;
     }
     
     // Determine flash animations for stats (always flash when tests complete)
     let passedFlash = '';
     let failedFlash = '';
-    let errorFlash = '';
     
     if (options.afterTestResults) {
         // Always flash when tests complete, regardless of whether counts changed
         if (passed > 0) {
             passedFlash = 'stat-flash-green';
         }
-        if (failed > 0) {
+        if (totalFailures > 0) {
             failedFlash = 'stat-flash-red';
-        }
-        if (error > 0) {
-            errorFlash = 'stat-flash-red';
         }
         
         // Update previous stats after displaying flash
-        previousStats = { passed, failed, error };
+        previousStats = { passed, failed: totalFailures };
     }
     
     let html = `
@@ -122,11 +119,7 @@ function renderTests(options = {}) {
                 </div>
                 <div class="stat-item ${failedFlash}">
                     <span class="stat-value" style="color: #d32f2f;">${displayFailed}</span>
-                    <span class="stat-label">Failed</span>
-                </div>
-                <div class="stat-item ${errorFlash}">
-                    <span class="stat-value" style="color: #a65e2b;">${displayError}</span>
-                    <span class="stat-label">Errors</span>
+                    <span class="stat-label">Failures</span>
                 </div>
             </div>
         </div>
@@ -256,6 +249,9 @@ window.addEventListener('message', event => {
     
     switch (message.type) {
         case 'testsDiscovered':
+            console.log('[Webview] Received testsDiscovered message with', message.tests.length, 'tests');
+            console.log('[Webview] Tests:', message.tests);
+            
             // Initialize test states with discovered tests
             testStates.clear();
             message.tests.forEach(test => {
@@ -264,6 +260,8 @@ window.addEventListener('message', event => {
                     filePath: test.filePath
                 });
             });
+            
+            console.log('[Webview] testStates after population:', testStates.size, 'entries');
             renderTests();
             
             // Save initial "not-run" state so first test run can flash
