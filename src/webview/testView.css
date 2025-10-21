@@ -6,7 +6,7 @@ body {
     margin: 0;
     font-size: 11px;
     background-color: var(--vscode-editor-background);
-    min-width: 280px; /* Minimum width to display summary stats comfortably */
+    min-width: 200px; /* Minimum width for square stat boxes */
 }
 
 /* Header section */
@@ -122,6 +122,13 @@ button:disabled {
     border-radius: 4px;
     text-align: center;
     border: 1px solid var(--vscode-panel-border);
+    /* Start as squares, expand to fill available width */
+    aspect-ratio: 1 / 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
 }
 
 .stat-value {

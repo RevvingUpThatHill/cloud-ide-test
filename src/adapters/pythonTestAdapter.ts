@@ -316,84 +316,94 @@ export class PythonTestAdapter implements TestAdapter {
                 if (failureMatch) {
                     const failureSection = failureMatch[0];
                     
-                    // Check for AssertionError (clean format with expected/actual)
-                    const assertionMatch = /self\.assertEqual\(([^,]+),\s*([^)]+)\)/i.exec(failureSection);
-                    if (assertionMatch) {
-                        // This is an assertion - extract expected and actual
-                        actual = assertionMatch[1].trim();
-                        expected = assertionMatch[2].trim();
-                        message = `Expected ${expected}, but got ${actual}`;
-                    } else {
-                        // Not an assertion - extract full context
-                        // Look for the final error line: "E   ErrorType: message"
-                        const errorLineMatch = /E\s+(\w+Error):\s*(.+?)$/m.exec(failureSection);
+                    // Check what type of error we have
+                    const errorLineMatch = /E\s+(\w+Error):\s*(.+?)$/m.exec(failureSection);
+                    
+                    if (errorLineMatch && errorLineMatch[1] === 'AssertionError') {
+                        // This is an assertion failure - try to extract expected/actual from the output
+                        const assertMsg = errorLineMatch[2].trim();
                         
-                        // Look for the file and line number where the error occurred in the source code
-                        // Format: "main/lab.py:30: NameError"
+                        // Try different assertion patterns
+                        // Pattern 1: "actual != expected" (from assertEqual)
+                        const notEqualMatch = /^(.+?)\s*!=\s*(.+?)$/.exec(assertMsg);
+                        if (notEqualMatch) {
+                            actual = notEqualMatch[1].trim();
+                            expected = notEqualMatch[2].trim();
+                            message = `Values not equal`;
+                        } 
+                        // Pattern 2: "actual == expected" (from assertNotEqual)
+                        else {
+                            const equalMatch = /^(.+?)\s*==\s*(.+?)$/.exec(assertMsg);
+                            if (equalMatch) {
+                                actual = equalMatch[1].trim();
+                                expected = `not ${equalMatch[2].trim()}`;
+                                message = `Values should not be equal`;
+                            } else {
+                                // Pattern 3: Other assertions - just show the message
+                                message = assertMsg || 'Assertion failed';
+                            }
+                        }
+                    } else if (errorLineMatch) {
+                        // This is some other error (NameError, TypeError, etc.) - show full context
+                        const errorType = errorLineMatch[1];
+                        const errorMsg = errorLineMatch[2].trim();
+                        
+                        let messageParts = [`${errorType}: ${errorMsg}`];
+                        
+                        // Look for the file and line number where the error occurred
                         const sourceLocationMatch = /([^\s]+\.py):(\d+):\s*$/m.exec(failureSection);
                         
                         // Look for the failing line of code
-                        // Format: ">       return count" with optional "^^^^^" pointer
                         const failingCodeMatch = />\s+(.+?)(?:\n\s+\^+)?(?:\nE\s+)/m.exec(failureSection);
                         
                         // Look for the function name
-                        // Format: "def function_name(param):"
                         const functionMatch = /def\s+(\w+)\s*\([^)]*\):/m.exec(failureSection);
                         
                         // Look for parameter values
-                        // Format: "num = 987"
                         const paramMatch = /^(\w+)\s*=\s*(.+?)$/m.exec(failureSection);
                         
-                        // Look for the test file location and assertion
-                        // Format: "test/lab_test.py:11:" followed by the assertion line
+                        // Look for the test file location
                         const testLocationMatch = /(test[^\s]*\.py):(\d+):/m.exec(failureSection);
                         const testAssertionMatch = />\s+(self\.\w+\([^)]+\))/m.exec(failureSection);
                         
-                        if (errorLineMatch) {
-                            const errorType = errorLineMatch[1];
-                            const errorMsg = errorLineMatch[2].trim();
+                        // Add source location with function context
+                        if (sourceLocationMatch) {
+                            const file = sourceLocationMatch[1];
+                            const line = sourceLocationMatch[2];
+                            const funcName = functionMatch ? functionMatch[1] : '';
+                            const params = paramMatch ? `${paramMatch[1]}=${paramMatch[2]}` : '';
                             
-                            let messageParts = [`${errorType}: ${errorMsg}`];
-                            
-                            // Add source location with function context
-                            if (sourceLocationMatch) {
-                                const file = sourceLocationMatch[1];
-                                const line = sourceLocationMatch[2];
-                                const funcName = functionMatch ? functionMatch[1] : '';
-                                const params = paramMatch ? `${paramMatch[1]}=${paramMatch[2]}` : '';
-                                
-                                if (funcName && params) {
-                                    messageParts.push(`  at ${file}:${line} in ${funcName}(${params})`);
-                                } else if (funcName) {
-                                    messageParts.push(`  at ${file}:${line} in ${funcName}()`);
-                                } else {
-                                    messageParts.push(`  at ${file}:${line}`);
-                                }
+                            if (funcName && params) {
+                                messageParts.push(`  at ${file}:${line} in ${funcName}(${params})`);
+                            } else if (funcName) {
+                                messageParts.push(`  at ${file}:${line} in ${funcName}()`);
+                            } else {
+                                messageParts.push(`  at ${file}:${line}`);
                             }
-                            
-                            // Add the failing line of code
-                            if (failingCodeMatch) {
-                                const failingCode = failingCodeMatch[1].trim();
-                                messageParts.push(`  → ${failingCode}`);
-                            }
-                            
-                            // Add test location and assertion
-                            if (testLocationMatch) {
-                                const testFile = testLocationMatch[1];
-                                const testLine = testLocationMatch[2];
-                                messageParts.push(`  Called from: ${testFile}:${testLine}`);
-                                
-                                if (testAssertionMatch) {
-                                    const assertion = testAssertionMatch[1].trim();
-                                    messageParts.push(`  → ${assertion}`);
-                                }
-                            }
-                            
-                            message = messageParts.join('\n');
-                        } else {
-                            // Fallback to the short error info from the summary line
-                            message = errorInfo || 'Test failed';
                         }
+                        
+                        // Add the failing line of code
+                        if (failingCodeMatch) {
+                            const failingCode = failingCodeMatch[1].trim();
+                            messageParts.push(`  → ${failingCode}`);
+                        }
+                        
+                        // Add test location
+                        if (testLocationMatch) {
+                            const testFile = testLocationMatch[1];
+                            const testLine = testLocationMatch[2];
+                            messageParts.push(`  Called from: ${testFile}:${testLine}`);
+                            
+                            if (testAssertionMatch) {
+                                const assertion = testAssertionMatch[1].trim();
+                                messageParts.push(`  → ${assertion}`);
+                            }
+                        }
+                        
+                        message = messageParts.join('\n');
+                    } else {
+                        // No error line found, use fallback
+                        message = errorInfo || 'Test failed';
                     }
                 } else {
                     // No detailed failure section found, use summary line
