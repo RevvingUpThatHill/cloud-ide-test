@@ -73,15 +73,14 @@ export class PythonTestAdapter implements TestAdapter {
         try {
             // Try multiple directory structures to find where tests are located
             // 1. src/ directory (Maven-like structure: src/main/, src/test/)
-            // 2. main/ directory (alternative structure: main/, test/)
+            // 2. Root with PYTHONPATH=src (alternative: main/ and test/ at root, imports from src/)
             // 3. Root directory (flat structure: test/ at root)
             // Note: Each attempt is wrapped in a subshell with stderr redirected for cd failures
             const srcPath = path.join(directory, 'src');
-            const mainPath = path.join(directory, 'main');
             
             const command = `
                 (cd "${srcPath}" && python3 -m unittest discover -s test -t . -p "*test*.py" -v) 2>/dev/null || \
-                (cd "${mainPath}" && python3 -m unittest discover -s ../test -t .. -p "*test*.py" -v) 2>/dev/null || \
+                (cd "${directory}" && PYTHONPATH="${srcPath}:${directory}" python3 -m unittest discover -s test -t . -p "*test*.py" -v) 2>/dev/null || \
                 (cd "${directory}" && python3 -m unittest discover -s test -t . -p "*test*.py" -v) || \
                 (cd "${srcPath}" && python3 -m pytest test --verbose --junit-xml=../test-results.xml) 2>/dev/null || \
                 (cd "${directory}" && python3 -m pytest test --verbose --junit-xml=test-results.xml)
@@ -106,7 +105,7 @@ export class PythonTestAdapter implements TestAdapter {
                 console.error('Error:', error.message);
                 console.error('Tried multiple directory structures:');
                 console.error('  1. cd src && python3 -m unittest discover -s test -t . -p "*test*.py" -v');
-                console.error('  2. cd main && python3 -m unittest discover -s ../test -t .. -p "*test*.py" -v');
+                console.error('  2. PYTHONPATH=src python3 -m unittest discover -s test -t . -p "*test*.py" -v (from root)');
                 console.error('  3. python3 -m unittest discover -s test -t . -p "*test*.py" -v (from root)');
                 console.error('Working directory:', directory);
                 throw new Error(`Failed to run tests: ${error.message}`);
