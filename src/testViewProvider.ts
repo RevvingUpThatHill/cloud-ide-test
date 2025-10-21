@@ -149,11 +149,15 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
 
     private async discoverAndDisplayTests() {
         if (!this._view) {
+            console.log('[discoverAndDisplayTests] No webview available');
             return;
         }
 
         // Send cached test states to the webview (no need to re-discover)
         const tests = Array.from(this.testStates.values());
+        console.log(`[discoverAndDisplayTests] Sending ${tests.length} tests to webview`);
+        console.log('[discoverAndDisplayTests] Test states:', tests);
+        
         this._view.webview.postMessage({
             type: 'testsDiscovered',
             tests: tests

@@ -155,9 +155,13 @@ export class PythonTestAdapter implements TestAdapter {
         ];
         
         for (const xmlPath of possibleXmlPaths) {
+            console.log(`[Python Adapter] Checking for XML at: ${xmlPath}`);
             if (fs.existsSync(xmlPath)) {
+                console.log(`[Python Adapter] Found XML file at: ${xmlPath}`);
                 const xmlContent = fs.readFileSync(xmlPath, 'utf-8');
-                tests.push(...this.parseJUnitXML(xmlContent));
+                const parsedTests = this.parseJUnitXML(xmlContent);
+                console.log(`[Python Adapter] Parsed ${parsedTests.length} tests from XML`);
+                tests.push(...parsedTests);
                 // Clean up the XML file
                 try {
                     fs.unlinkSync(xmlPath);
@@ -167,10 +171,22 @@ export class PythonTestAdapter implements TestAdapter {
                 break; // Found and parsed XML, stop looking
             }
         }
-
-        // Fallback: parse from unittest console output
+        
         if (tests.length === 0) {
-            tests = this.parseUnittestConsoleOutput(stdout, stderr);
+            console.log('[Python Adapter] No XML found or XML contained no tests, falling back to console parsing');
+        }
+
+        // Fallback: parse from console output
+        if (tests.length === 0) {
+            // Try pytest format first
+            tests = this.parsePytestConsoleOutput(stdout, stderr);
+            console.log(`[Python Adapter] Pytest console parsing found ${tests.length} tests`);
+            
+            // If no pytest results, try unittest format
+            if (tests.length === 0) {
+                tests = this.parseUnittestConsoleOutput(stdout, stderr);
+                console.log(`[Python Adapter] Unittest console parsing found ${tests.length} tests`);
+            }
         }
 
         // Filter to only include tests that were discovered
@@ -213,6 +229,9 @@ export class PythonTestAdapter implements TestAdapter {
                     message = this.decodeXmlEntities(failureMatch[1]);
                     const fullMessage = this.decodeXmlEntities(failureMatch[2]);
                     
+                    // Include the full traceback in the message for better debugging
+                    message = fullMessage || message;
+                    
                     // Try to extract expected and actual from assertion errors
                     const assertMatch = /AssertionError:\s*(.+)/s.exec(fullMessage);
                     if (assertMatch) {
@@ -240,7 +259,9 @@ export class PythonTestAdapter implements TestAdapter {
                 status = 'failed';
                 const errorMatch = /<error[^>]*message="([^"]*)"[^>]*>([\s\S]*?)<\/error>/.exec(content);
                 if (errorMatch) {
-                    message = this.decodeXmlEntities(errorMatch[1]);
+                    const errorMessage = this.decodeXmlEntities(errorMatch[1]);
+                    const fullErrorMessage = this.decodeXmlEntities(errorMatch[2]);
+                    message = fullErrorMessage || errorMessage;
                 }
             }
             
@@ -251,6 +272,54 @@ export class PythonTestAdapter implements TestAdapter {
                 message: message || undefined,
                 expected: expected || undefined,
                 actual: actual || undefined
+            });
+        }
+        
+        return tests;
+    }
+
+    private parsePytestConsoleOutput(stdout: string, stderr: string): TestCase[] {
+        const tests: TestCase[] = [];
+        const output = stdout + '\n' + stderr;
+        
+        // Parse pytest output format:
+        // PASSED test/lab_test.py::TestClass::test_method
+        // FAILED test/lab_test.py::TestClass::test_method - ErrorType: message
+        const testResultPattern = /(PASSED|FAILED|SKIPPED|ERROR)\s+([^\s]+)::([\w]+)::([\w]+)(?:\s+-\s+(.+))?/g;
+        
+        let match;
+        while ((match = testResultPattern.exec(output)) !== null) {
+            const [, result, filePath, className, methodName, errorInfo] = match;
+            const fullName = `${className}.${methodName}`;
+            
+            let status: 'passed' | 'failed' | 'skipped' = 'passed';
+            let message = '';
+            
+            if (result === 'PASSED') {
+                status = 'passed';
+            } else if (result === 'SKIPPED') {
+                status = 'skipped';
+                message = errorInfo || '';
+            } else {
+                status = 'failed';
+                message = errorInfo || '';
+                
+                // Try to find the full error details in the FAILURES section
+                const failurePattern = new RegExp(
+                    `_{10,}\\s+${className}\\.${methodName}\\s+_{10,}[\\s\\S]*?(?=_{10,}|={10,}|$)`,
+                    'i'
+                );
+                const failureMatch = failurePattern.exec(output);
+                if (failureMatch) {
+                    // Extract the full failure message
+                    message = failureMatch[0].trim();
+                }
+            }
+            
+            tests.push({
+                name: fullName,
+                status,
+                message: message || undefined
             });
         }
         
