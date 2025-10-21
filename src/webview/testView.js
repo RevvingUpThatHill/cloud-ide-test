@@ -260,12 +260,16 @@ window.addEventListener('message', event => {
             console.log('[Webview] Received testsDiscovered message with', message.tests.length, 'tests');
             console.log('[Webview] Tests:', message.tests);
             
-            // Initialize test states with discovered tests
+            // Initialize test states with discovered tests (including all result data)
             testStates.clear();
             message.tests.forEach(test => {
                 testStates.set(test.name, {
                     state: test.state,
-                    filePath: test.filePath
+                    filePath: test.filePath,
+                    message: test.message,
+                    duration: test.duration,
+                    expected: test.expected,
+                    actual: test.actual
                 });
             });
             
