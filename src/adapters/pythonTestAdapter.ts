@@ -148,15 +148,23 @@ export class PythonTestAdapter implements TestAdapter {
         let tests: TestCase[] = [];
         
         // Try to parse pytest XML report if available
-        const xmlPath = path.join(directory, 'test-results.xml');
-        if (fs.existsSync(xmlPath)) {
-            const xmlContent = fs.readFileSync(xmlPath, 'utf-8');
-            tests.push(...this.parseJUnitXML(xmlContent));
-            // Clean up the XML file
-            try {
-                fs.unlinkSync(xmlPath);
-            } catch (e) {
-                // Ignore cleanup errors
+        // Check multiple possible locations based on where pytest was run from
+        const possibleXmlPaths = [
+            path.join(directory, 'test-results.xml'),           // Root directory
+            path.join(directory, 'src', 'test-results.xml'),    // src directory (if run from src/)
+        ];
+        
+        for (const xmlPath of possibleXmlPaths) {
+            if (fs.existsSync(xmlPath)) {
+                const xmlContent = fs.readFileSync(xmlPath, 'utf-8');
+                tests.push(...this.parseJUnitXML(xmlContent));
+                // Clean up the XML file
+                try {
+                    fs.unlinkSync(xmlPath);
+                } catch (e) {
+                    // Ignore cleanup errors
+                }
+                break; // Found and parsed XML, stop looking
             }
         }
 
