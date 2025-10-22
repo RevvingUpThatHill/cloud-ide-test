@@ -240,14 +240,28 @@ module.exports = function(config) {
 
         // Filter to only include tests that were discovered
         // This prevents phantom "Failed Test 1" entries from appearing
+        // Note: Parsed test names include component name (e.g., "AppComponent > should render")
+        // but discovered names are just the description (e.g., "should render")
         const discoveredTestNames = new Set(this.discoveredTests.map(t => t.name));
-        tests = tests.filter(test => discoveredTestNames.has(test.name));
+        tests = tests.filter(test => {
+            // Extract just the test description after " > "
+            const parts = test.name.split(' > ');
+            const testDescription = parts.length > 1 ? parts[1] : test.name;
+            return discoveredTestNames.has(testDescription);
+        });
 
         // Add any discovered tests that weren't in the parsed results as "passed"
         // Karma typically only outputs failed tests explicitly
-        const parsedTestNames = new Set(tests.map(t => t.name));
+        // Note: Parsed test names include component name (e.g., "AppComponent > should render")
+        // but discovered names are just the description (e.g., "should render")
+        const parsedTestDescriptions = new Set(tests.map(t => {
+            // Extract just the test description after " > "
+            const parts = t.name.split(' > ');
+            return parts.length > 1 ? parts[1] : t.name;
+        }));
+        
         for (const discoveredTest of this.discoveredTests) {
-            if (!parsedTestNames.has(discoveredTest.name)) {
+            if (!parsedTestDescriptions.has(discoveredTest.name)) {
                 // This test was discovered but not in the output, assume it passed
                 console.log(`[Angular Adapter] Test ${discoveredTest.name} not in output, inferring passed status`);
                 tests.push({
