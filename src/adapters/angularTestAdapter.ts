@@ -329,72 +329,40 @@ module.exports = function(config) {
     private parseKarmaConsoleOutput(output: string): TestCase[] {
         const tests: TestCase[] = [];
         
-        // Parse Karma console output
-        // Pattern: "Chrome Headless ... ComponentName testName FAILED" or "... SUCCESS"
-        const testPattern = /(?:Chrome|PhantomJS|Firefox)[^\n]*?\s+([A-Z]\w+(?:\s+\w+)*)\s+(should\s+[^\n]+?)\s+(FAILED|SUCCESS)/g;
+        // Parse failed tests from Karma console output
+        // Pattern: "Chrome Headless ... ComponentName testName FAILED"
+        const failedTestPattern = /(?:Chrome|PhantomJS|Firefox)[^\n]*?\s+([A-Z]\w+(?:\s+\w+)*)\s+(should\s+[^\n]+?)\s+FAILED/g;
         
         let match;
-        while ((match = testPattern.exec(output)) !== null) {
-            const [fullMatch, componentName, testDescription, result] = match;
+        while ((match = failedTestPattern.exec(output)) !== null) {
+            const [fullMatch, componentName, testDescription] = match;
             const fullName = `${componentName} > ${testDescription}`;
-            const status = result === 'SUCCESS' ? 'passed' : 'failed';
             
             let message = '';
             let fullOutput = '';
             
-            if (status === 'failed') {
-                // Extract the error details that follow this test
-                const errorStartIndex = match.index + fullMatch.length;
-                const nextTestMatch = /(?:Chrome|PhantomJS|Firefox)[^\n]*?\s+[A-Z]\w+/.exec(output.substring(errorStartIndex));
-                const errorEndIndex = nextTestMatch ? errorStartIndex + nextTestMatch.index : output.length;
-                const errorSection = output.substring(errorStartIndex, errorEndIndex).trim();
-                
-                // Extract error message
-                const errorMatch = /Error:\s*(.+?)(?:\n|$)/.exec(errorSection);
-                if (errorMatch) {
-                    message = errorMatch[1].trim();
-                    fullOutput = errorSection;
-                } else {
-                    message = 'Test failed';
-                    fullOutput = errorSection;
-                }
+            // Extract the error details that follow this test
+            const errorStartIndex = match.index + fullMatch.length;
+            const nextTestMatch = /(?:Chrome|PhantomJS|Firefox)[^\n]*?\s+[A-Z]\w+/.exec(output.substring(errorStartIndex));
+            const errorEndIndex = nextTestMatch ? errorStartIndex + nextTestMatch.index : output.length;
+            const errorSection = output.substring(errorStartIndex, errorEndIndex).trim();
+            
+            // Extract error message
+            const errorMatch = /Error:\s*(.+?)(?:\n|$)/.exec(errorSection);
+            if (errorMatch) {
+                message = errorMatch[1].trim();
+                fullOutput = errorSection;
+            } else {
+                message = 'Test failed';
+                fullOutput = errorSection;
             }
             
             tests.push({
                 name: fullName,
-                status,
+                status: 'failed',
                 message: message || undefined,
                 fullOutput: fullOutput || undefined
             });
-        }
-        
-        // If no tests were parsed, fall back to summary-based approach
-        if (tests.length === 0) {
-            const summaryPattern = /TOTAL:\s*(\d+)\s+FAILED,\s*(\d+)\s+SUCCESS/;
-            const summaryMatch = summaryPattern.exec(output);
-            
-            if (summaryMatch) {
-                const failedCount = parseInt(summaryMatch[1]);
-                const passedCount = parseInt(summaryMatch[2]);
-                
-                // Use discovered tests if available
-                if (this.discoveredTests.length === failedCount + passedCount) {
-                    // Assume first tests passed, last tests failed (not ideal but better than nothing)
-                    for (let i = 0; i < passedCount; i++) {
-                        tests.push({
-                            name: this.discoveredTests[i].name,
-                            status: 'passed'
-                        });
-                    }
-                    for (let i = passedCount; i < this.discoveredTests.length; i++) {
-                        tests.push({
-                            name: this.discoveredTests[i].name,
-                            status: 'failed',
-                            message: 'Check Karma output for details'
-                        });
-                    }
-                }
-            }
         }
         
         return tests;
