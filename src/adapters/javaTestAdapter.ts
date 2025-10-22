@@ -164,30 +164,9 @@ export class JavaTestAdapter implements TestAdapter {
     private parseTestOutput(stdout: string, stderr: string, directory: string): TestResult {
         let tests: TestCase[] = [];
         
-        // Try to parse JUnit XML reports if available
-        const surefireReportsDir = path.join(directory, 'target', 'surefire-reports');
-        console.log(`[Java Adapter] Looking for XML reports in: ${surefireReportsDir}`);
-        
-        if (fs.existsSync(surefireReportsDir)) {
-            const xmlFiles = fs.readdirSync(surefireReportsDir)
-                .filter(file => file.startsWith('TEST-') && file.endsWith('.xml'));
-            
-            console.log(`[Java Adapter] Found ${xmlFiles.length} XML report files: ${xmlFiles.join(', ')}`);
-            
-            for (const xmlFile of xmlFiles) {
-                const xmlPath = path.join(surefireReportsDir, xmlFile);
-                console.log(`[Java Adapter] Reading XML report: ${xmlFile}`);
-                const xmlContent = fs.readFileSync(xmlPath, 'utf-8');
-                tests.push(...this.parseJUnitXML(xmlContent));
-            }
-        } else {
-            console.log(`[Java Adapter] Report directory does not exist`);
-        }
-
-        // Fallback: parse from stdout (but match with discovered tests)
-        if (tests.length === 0) {
-            tests = this.parseConsoleOutput(stdout);
-        }
+        // Parse directly from console output (more reliable than XML files)
+        console.log(`[Java Adapter] Parsing console output directly`);
+        tests = this.parseMavenConsoleOutput(stdout, stderr);
 
         // Filter to only include tests that were discovered
         // This prevents phantom "Failed Test 1" entries from appearing
@@ -294,32 +273,114 @@ export class JavaTestAdapter implements TestAdapter {
         return tests;
     }
 
-    private parseConsoleOutput(output: string): TestCase[] {
+    private parseMavenConsoleOutput(stdout: string, stderr: string): TestCase[] {
         const tests: TestCase[] = [];
-        const lines = output.split('\n');
+        const output = stdout + '\n' + stderr;
         
-        // Look for Maven Surefire output patterns
-        const testPattern = /Tests run: (\d+), Failures: (\d+), Errors: (\d+), Skipped: (\d+)/;
-        const match = testPattern.exec(output);
+        // Parse Maven Surefire console output
+        // Pattern: testMethodName(ClassName)  Time elapsed: X.XXX sec  <<< FAILURE!
+        const testResultPattern = /^(\w+)\((\w+)\)\s+Time elapsed:\s+([\d.]+)\s+sec(?:\s+<<<\s+(FAILURE|ERROR)!)?/gm;
         
-        if (match) {
-            const [, total, failures, errors, skipped] = match;
-            const passed = parseInt(total) - parseInt(failures) - parseInt(errors) - parseInt(skipped);
+        let match;
+        while ((match = testResultPattern.exec(output)) !== null) {
+            const [, methodName, className, timeStr, result] = match;
+            const fullName = `${className}.${methodName}`;
+            const duration = Math.round(parseFloat(timeStr) * 1000);
             
-            // Create generic test entries
-            for (let i = 0; i < passed; i++) {
-                tests.push({ name: `Test ${i + 1}`, status: 'passed' });
+            let status: 'passed' | 'failed' | 'skipped' = 'passed';
+            let message = '';
+            let expected = '';
+            let actual = '';
+            let fullOutput = '';
+            
+            if (result === 'FAILURE' || result === 'ERROR') {
+                status = 'failed';
+                
+                // Extract the failure section for this specific test
+                // Pattern: testMethodName(ClassName) ... followed by exception and stack trace
+                // Stop at the next test result line, "Results :" summary, or end of output
+                const failurePattern = new RegExp(
+                    `${methodName}\\(${className}\\)[\\s\\S]*?(?:org\\.junit\\.[\\w.]+|java\\.lang\\.[\\w.]+):[\\s\\S]*?(?=\\n\\w+\\(\\w+\\)\\s+Time elapsed:|\\nResults :|$)`,
+                    'i'
+                );
+                const failureMatch = failurePattern.exec(output);
+                
+                if (failureMatch) {
+                    fullOutput = failureMatch[0].trim();
+                    
+                    // Check if this is an assertion failure
+                    const assertionMatch = /^(org\.junit\.\w+(?:Failure|Error)):\s*(.+?)$/m.exec(fullOutput);
+                    
+                    if (assertionMatch) {
+                        const exceptionType = assertionMatch[1];
+                        const exceptionMessage = assertionMatch[2];
+                        
+                        // Check if it's a comparison failure (assertion)
+                        if (exceptionType.includes('Comparison') || exceptionType.includes('AssertionError') || 
+                            exceptionMessage.includes('expected:') || exceptionMessage.includes('but was:')) {
+                            
+                            // Extract expected and actual from the message
+                            const expectedActualMatch = /expected:\s*<\[?([^\]>]+)\]?>\s+but was:\s*<\[?([^\]>]+)\]?>/i.exec(exceptionMessage);
+                            if (expectedActualMatch) {
+                                expected = expectedActualMatch[1].trim();
+                                actual = expectedActualMatch[2].trim();
+                                message = 'Values not equal';
+                            } else {
+                                message = exceptionMessage;
+                            }
+                        } else {
+                            // Non-assertion error (NullPointerException, etc.)
+                            message = this.parseJavaErrorFromConsole(exceptionType, exceptionMessage, fullOutput);
+                        }
+                    } else {
+                        message = 'Test failed';
+                    }
+                } else {
+                    message = 'Test failed - see console output';
+                }
             }
-            for (let i = 0; i < parseInt(failures) + parseInt(errors); i++) {
-                tests.push({
-                    name: `Failed Test ${i + 1}`,
-                    status: 'failed',
-                    message: 'Check Maven output for details'
-                });
-            }
+            
+            tests.push({
+                name: fullName,
+                status,
+                duration,
+                message: message || undefined,
+                expected: expected || undefined,
+                actual: actual || undefined,
+                fullOutput: fullOutput || undefined
+            });
         }
         
         return tests;
+    }
+    
+    private parseJavaErrorFromConsole(exceptionType: string, exceptionMessage: string, fullOutput: string): string {
+        const messageParts: string[] = [];
+        
+        // Add exception type and message
+        const simpleType = exceptionType.split('.').pop() || exceptionType;
+        messageParts.push(`${simpleType}: ${exceptionMessage}`);
+        
+        // Extract the first relevant stack trace line (user code, not JUnit internals)
+        const stackLines = fullOutput.split('\n');
+        for (const line of stackLines) {
+            const atMatch = /^\s*at\s+([^\(]+)\(([^:]+):(\d+)\)/.exec(line);
+            if (atMatch) {
+                const method = atMatch[1].trim();
+                const file = atMatch[2].trim();
+                const lineNum = atMatch[3];
+                
+                // Skip JUnit and Java internals
+                if (!method.startsWith('org.junit') && 
+                    !method.startsWith('java.') && 
+                    !method.startsWith('jdk.')) {
+                    messageParts.push(`  at ${file}:${lineNum}`);
+                    break;
+                }
+            }
+        }
+        
+        return messageParts.join('\n');
     }
 
     private parseJavaAssertion(shortMessage: string, fullMessage: string): { message: string; expected: string; actual: string } {
