@@ -1,11 +1,8 @@
-/* Base styles */
+/* Test View Specific Styles */
+
 body {
     padding: 10px;
-    font-family: var(--vscode-font-family);
-    color: var(--vscode-foreground);
-    margin: 0;
     font-size: 11px;
-    background-color: var(--vscode-editor-background);
     min-width: 200px; /* Minimum width for square stat boxes */
 }
 
@@ -305,17 +302,21 @@ button:disabled {
     font-size: 10px;
 }
 
-/* No results state */
-.no-results {
-    text-align: center;
-    padding: 24px 16px;
-    color: var(--vscode-descriptionForeground);
-    font-style: italic;
-    font-size: 10px;
+/* Make test items clickable */
+.test-item {
+    cursor: pointer;
+    transition: background-color 0.15s;
 }
 
-/* Utility classes */
-.hidden {
-    display: none;
+.test-item:hover {
+    background-color: var(--vscode-list-hoverBackground);
+}
+
+.test-item.test-not-run {
+    cursor: default;
+}
+
+.test-item.test-not-run:hover {
+    background-color: transparent;
 }
 

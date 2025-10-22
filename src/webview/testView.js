@@ -142,7 +142,7 @@ function renderTests(options = {}) {
         }
         
         html += `
-            <div class="test-item test-${stateClass} ${flashClass}">
+            <div class="test-item test-${stateClass} ${flashClass}" onclick="handleTestClick('${escapeHtml(name).replace(/'/g, "\\'")}')">
                 <div class="test-name">${formatTestName(name)}</div>
                 <div class="test-status">${displayState}</div>
                 ${test.duration ? `<div class="test-duration">Duration: ${test.duration}ms</div>` : ''}
@@ -399,4 +399,18 @@ window.addEventListener('DOMContentLoaded', () => {
     console.log('[Webview] Sending webviewReady message');
     vscode.postMessage({ type: 'webviewReady' });
 });
+
+// Test click handler
+function handleTestClick(testName) {
+    const testData = testStates.get(testName);
+    if (!testData || testData.state === 'not-run') {
+        return; // Don't show detail for not-run tests
+    }
+    
+    // Request to open detail panel with test details
+    vscode.postMessage({ 
+        type: 'testClicked',
+        testName: testName
+    });
+}
 

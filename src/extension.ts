@@ -36,6 +36,8 @@ export async function activate(context: vscode.ExtensionContext) {
         const runTestsCommand = telemetry.instrumentCommand(
             'cloud-ide-test.runTests',
             async () => {
+                // Ensure the webview is visible before running tests
+                await provider.ensureWebviewVisible();
                 await provider.runTests();
             }
         );

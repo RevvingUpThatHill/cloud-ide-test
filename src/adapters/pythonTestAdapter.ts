@@ -69,6 +69,7 @@ export class PythonTestAdapter implements TestAdapter {
     async runTests(directory: string): Promise<TestResult> {
         let stdout = '';
         let stderr = '';
+        let successfulCommand = '';
         
         try {
             // Try multiple directory structures to find where tests are located
@@ -93,11 +94,17 @@ export class PythonTestAdapter implements TestAdapter {
             });
             stdout = result.stdout;
             stderr = result.stderr;
+            
+            // Determine which command succeeded based on output
+            successfulCommand = this.determineSuccessfulCommand(stdout, stderr, directory);
         } catch (error: any) {
             // Command failed (non-zero exit code) - this is NORMAL when tests fail
             // Capture the output anyway
             stdout = error.stdout || '';
             stderr = error.stderr || '';
+            
+            // Determine which command succeeded based on output
+            successfulCommand = this.determineSuccessfulCommand(stdout, stderr, directory);
             
             // Only throw if there's truly no output (command not found, etc.)
             if (!stdout && !stderr) {
@@ -115,11 +122,20 @@ export class PythonTestAdapter implements TestAdapter {
         // Always parse the output, whether tests passed or failed
         const result = this.parseTestOutput(stdout, stderr, directory);
         
+        // Add full output to each test for detail panel
+        const fullOutput = `=== STDOUT ===\n${stdout}\n\n=== STDERR ===\n${stderr}`;
+        result.tests = result.tests.map(test => ({
+            ...test,
+            fullOutput: test.fullOutput || fullOutput // Use test-specific output if available
+        }));
+        
+        // Add the successful command to the result
+        result.command = successfulCommand;
+        
         // Validate: if we discovered tests but got no results, show them as errors with full output
         if (this.discoveredTests.length > 0 && result.tests.length === 0) {
             const errorMessage = `Test execution failed: Discovered ${this.discoveredTests.length} tests but got no results.\n` +
-                `This may indicate a Python environment issue or missing test dependencies.\n\n` +
-                `=== Full Test Output ===\n${stdout}\n${stderr}`;
+                `This may indicate a Python environment issue or missing test dependencies.`;
             
             console.error('[Python Adapter] Test execution error - Full output:');
             console.error('=== STDOUT ===');
@@ -133,12 +149,14 @@ export class PythonTestAdapter implements TestAdapter {
                 tests: this.discoveredTests.map(test => ({
                     name: test.name,
                     status: 'error' as const,
-                    message: errorMessage
+                    message: errorMessage,
+                    fullOutput: fullOutput
                 })),
                 totalTests: this.discoveredTests.length,
                 passedTests: 0,
                 failedTests: 0,
-                skippedTests: 0
+                skippedTests: 0,
+                command: successfulCommand
             };
         }
         
@@ -529,6 +547,38 @@ export class PythonTestAdapter implements TestAdapter {
             .replace(/&quot;/g, '"')
             .replace(/&apos;/g, "'")
             .replace(/&amp;/g, '&');
+    }
+    
+    private determineSuccessfulCommand(stdout: string, stderr: string, directory: string): string {
+        const output = stdout + '\n' + stderr;
+        const srcPath = path.join(directory, 'src');
+        
+        // Check for pytest indicators
+        if (output.includes('pytest') || output.includes('test session starts')) {
+            // Check if run from src/ or root
+            if (fs.existsSync(path.join(directory, 'test-results.xml'))) {
+                return `cd "${directory}" && python3 -m pytest ./test --verbose --junit-xml=test-results.xml`;
+            } else if (fs.existsSync(path.join(srcPath, 'test-results.xml'))) {
+                return `cd "${srcPath}" && python3 -m pytest ./test --verbose --junit-xml=../test-results.xml`;
+            } else {
+                return `python3 -m pytest ./test --verbose`;
+            }
+        }
+        
+        // Check for unittest indicators
+        if (output.match(/test_\w+.*\.\.\.\s+(ok|FAIL|ERROR)/)) {
+            // Check if PYTHONPATH was needed
+            if (output.includes('ModuleNotFoundError') || output.includes('ImportError')) {
+                return `cd "${directory}" && PYTHONPATH="${srcPath}:${directory}" python3 -m unittest discover -s ./test -p "*test*.py" -v`;
+            } else if (fs.existsSync(path.join(srcPath, 'test'))) {
+                return `cd "${srcPath}" && python3 -m unittest discover -s ./test -p "*test*.py" -v`;
+            } else {
+                return `cd "${directory}" && python3 -m unittest discover -s ./test -p "*test*.py" -v`;
+            }
+        }
+        
+        // Fallback
+        return `python3 -m unittest discover -s ./test -p "*test*.py" -v`;
     }
 }
 

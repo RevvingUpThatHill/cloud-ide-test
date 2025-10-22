@@ -27,10 +27,12 @@ interface TestState {
     expected?: string;
     actual?: string;
     errorType?: string;
+    fullOutput?: string; // Full stack trace or detailed output
 }
 
 export class TestViewProvider implements vscode.WebviewViewProvider {
     private _view?: vscode.WebviewView;
+    private _detailPanel?: vscode.WebviewPanel; // Separate detail panel
     private workspaceType: string;
     private testAdapter: TestAdapter;
     private configWarnings: string[];
@@ -41,6 +43,7 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
     // Persistent test state - survives webview disposal
     private discoveredTests: DiscoveredTest[] = [];
     private testStates: Map<string, TestState> = new Map();
+    private lastTestCommand: string = ''; // Store the command used to run tests
 
     constructor(
         private readonly _extensionUri: vscode.Uri, 
@@ -59,6 +62,18 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
         // Setup read-only protection for test files
         if (context) {
             this.setupReadOnlyProtection(context);
+        }
+    }
+
+    /**
+     * Ensure the webview is visible (open it if closed)
+     */
+    public async ensureWebviewVisible(): Promise<void> {
+        if (!this._view) {
+            // Webview is not open, open it by focusing the view
+            await vscode.commands.executeCommand('cloudIdeTestView.focus');
+            // Give it a moment to initialize
+            await new Promise(resolve => setTimeout(resolve, 300));
         }
     }
 
@@ -143,6 +158,13 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
                 case 'runTests':
                     await this.runTests();
                     break;
+                case 'testClicked':
+                    // Open detail panel with test details
+                    const testState = this.testStates.get(data.testName);
+                    if (testState && testState.state !== 'not-run') {
+                        this.showTestDetailPanel(testState);
+                    }
+                    break;
             }
         });
     }
@@ -210,7 +232,7 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
                 } else {
                     console.log(`✓ Successfully set read-only permissions for: ${path.basename(absolutePath)}`);
                 }
-            } catch (error) {
+        } catch (error) {
                 const errorMsg = error instanceof Error ? error.message : String(error);
                 console.error(`Failed to chmod test file: ${absolutePath}`, errorMsg);
                 vscode.window.showWarningMessage(
@@ -371,6 +393,11 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
                 console.error('Failed to check git status:', error);
             });
 
+            // Store the command used for this test run
+            if (results.command) {
+                this.lastTestCommand = results.command;
+            }
+
             // Update cached test states with results
             results.tests.forEach(test => {
                 const existingState = this.testStates.get(test.name);
@@ -380,6 +407,7 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
                     existingState.duration = test.duration;
                     existingState.expected = test.expected;
                     existingState.actual = test.actual;
+                    existingState.fullOutput = test.fullOutput;
                 }
             });
 
@@ -387,7 +415,8 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
             this._view.webview.postMessage({
                 type: 'testResults',
                 results: results,
-                workspaceType: this.workspaceType
+                workspaceType: this.workspaceType,
+                command: this.lastTestCommand
             });
         } catch (error) {
             const duration = Date.now() - startTime;
@@ -410,14 +439,82 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
         const webviewPath = path.join(__dirname, 'webview');
         
         const htmlTemplate = fs.readFileSync(path.join(webviewPath, 'testView.html'), 'utf8');
+        const sharedCss = fs.readFileSync(path.join(webviewPath, 'shared.css'), 'utf8');
         const cssContent = fs.readFileSync(path.join(webviewPath, 'testView.css'), 'utf8');
         const jsContent = fs.readFileSync(path.join(webviewPath, 'testView.js'), 'utf8');
         
         // Replace placeholders in the HTML template
         const html = htmlTemplate
+            .replace('__SHARED_STYLES__', sharedCss)
             .replace('__STYLES__', cssContent)
             .replace('__SCRIPT__', jsContent)
             .replace('__WORKSPACE_TYPE__', this.workspaceTypeDisplay);
+        
+        return html;
+    }
+
+    private showTestDetailPanel(test: TestState) {
+        // If panel already exists, reveal it and update content
+        if (this._detailPanel) {
+            this._detailPanel.reveal(vscode.ViewColumn.Two);
+            this._detailPanel.webview.postMessage({
+                type: 'showTestDetails',
+                test: test,
+                command: this.lastTestCommand
+            });
+            return;
+        }
+
+        // Create new panel
+        this._detailPanel = vscode.window.createWebviewPanel(
+            'testDetails',
+            'Test Details',
+            vscode.ViewColumn.Two,
+            {
+                enableScripts: true,
+                retainContextWhenHidden: true
+            }
+        );
+
+        // Set HTML content
+        this._detailPanel.webview.html = this._getDetailPanelHtml(this._detailPanel.webview);
+
+        // Handle panel disposal
+        this._detailPanel.onDidDispose(() => {
+            this._detailPanel = undefined;
+        });
+
+        // Handle messages from detail panel
+        this._detailPanel.webview.onDidReceiveMessage((data) => {
+            switch (data.type) {
+                case 'detailPanelReady':
+                    // Send test details once panel is ready
+                    if (this._detailPanel) {
+                        this._detailPanel.webview.postMessage({
+                            type: 'showTestDetails',
+                            test: test,
+                            command: this.lastTestCommand
+                        });
+                    }
+                    break;
+            }
+        });
+    }
+
+    private _getDetailPanelHtml(webview: vscode.Webview): string {
+        // Load the HTML, CSS, and JS from separate files
+        const webviewPath = path.join(__dirname, 'webview');
+        
+        const htmlTemplate = fs.readFileSync(path.join(webviewPath, 'testDetail.html'), 'utf8');
+        const sharedCss = fs.readFileSync(path.join(webviewPath, 'shared.css'), 'utf8');
+        const cssContent = fs.readFileSync(path.join(webviewPath, 'testDetail.css'), 'utf8');
+        const jsContent = fs.readFileSync(path.join(webviewPath, 'testDetail.js'), 'utf8');
+        
+        // Replace placeholders in the HTML template
+        const html = htmlTemplate
+            .replace('__SHARED_STYLES__', sharedCss)
+            .replace('__STYLES__', cssContent)
+            .replace('__SCRIPT__', jsContent);
         
         return html;
     }

@@ -106,6 +106,16 @@ export class AngularTestAdapter implements TestAdapter {
         // Always parse the output, whether tests passed or failed
         const result = this.parseTestOutput(stdout, stderr, directory);
         
+        // Add full output to each test for detail panel
+        const fullOutput = `=== STDOUT ===\n${stdout}\n\n=== STDERR ===\n${stderr}`;
+        result.tests = result.tests.map(test => ({
+            ...test,
+            fullOutput: test.fullOutput || fullOutput
+        }));
+        
+        // Add the command to the result
+        result.command = 'npm run test -- --watch=false --browsers=ChromeHeadless';
+        
         // Validate: if we discovered tests but got no results, show them as errors
         if (this.discoveredTests.length > 0 && result.tests.length === 0) {
             const errorMessage = `Test execution failed: Discovered ${this.discoveredTests.length} tests but got no results. ` +
@@ -123,12 +133,14 @@ export class AngularTestAdapter implements TestAdapter {
                 tests: this.discoveredTests.map(test => ({
                     name: test.name,
                     status: 'error' as const,
-                    message: errorMessage
+                    message: errorMessage,
+                    fullOutput: fullOutput
                 })),
                 totalTests: this.discoveredTests.length,
                 passedTests: 0,
                 failedTests: 0,
-                skippedTests: 0
+                skippedTests: 0,
+                command: 'npm run test -- --watch=false --browsers=ChromeHeadless'
             };
         }
         
@@ -194,15 +206,28 @@ export class AngularTestAdapter implements TestAdapter {
                 const failureMatch = /<failure[^>]*>([\s\S]*?)<\/failure>/.exec(content);
                 if (failureMatch) {
                     const fullMessage = this.decodeXmlEntities(failureMatch[1]);
-                    message = fullMessage;
                     
-                    // Try to extract expected and actual values from Jasmine format
-                    const expectedMatch = /Expected\s+(.+?)\s+to/i.exec(fullMessage) ||
-                                        /expected:?\s*(.+?)(?:\n|$)/i.exec(fullMessage);
-                    const actualMatch = /(?:but was|actual):?\s*(.+?)(?:\n|$)/i.exec(fullMessage);
+                    // Determine if this is an assertion failure or other error
+                    const isAssertionError = /Expected|toBe|toEqual|toMatch|toContain/i.test(fullMessage);
                     
-                    if (expectedMatch) {expected = expectedMatch[1].trim();}
-                    if (actualMatch) {actual = actualMatch[1].trim();}
+                    if (isAssertionError) {
+                        // Clean assertion failure - extract expected/actual
+                        const result = this.parseJasmineAssertion(fullMessage);
+                        message = result.message;
+                        expected = result.expected;
+                        actual = result.actual;
+                    } else {
+                        // Non-assertion error - provide full context
+                        message = this.parseJasmineError(fullMessage);
+                    }
+                }
+            } else if (content.includes('<error')) {
+                status = 'failed';
+                const errorMatch = /<error[^>]*>([\s\S]*?)<\/error>/.exec(content);
+                if (errorMatch) {
+                    const fullMessage = this.decodeXmlEntities(errorMatch[1]);
+                    // Errors are always non-assertion
+                    message = this.parseJasmineError(fullMessage);
                 }
             } else if (content.includes('<skipped')) {
                 status = 'skipped';
@@ -269,6 +294,128 @@ export class AngularTestAdapter implements TestAdapter {
         return tests;
     }
 
+    private parseJasmineAssertion(fullMessage: string): { message: string; expected: string; actual: string } {
+        let message = '';
+        let expected = '';
+        let actual = '';
+        
+        // Jasmine pattern 1: "Expected <actual> to be <expected>"
+        const pattern1 = /Expected\s+(.+?)\s+to\s+(?:be|equal)\s+(.+?)(?:\.|$)/i.exec(fullMessage);
+        if (pattern1) {
+            actual = pattern1[1].trim();
+            expected = pattern1[2].trim();
+            message = 'Values not equal';
+            return { message, expected, actual };
+        }
+        
+        // Jasmine pattern 2: "Expected <actual> not to be <expected>"
+        const pattern2 = /Expected\s+(.+?)\s+not\s+to\s+(?:be|equal)\s+(.+?)(?:\.|$)/i.exec(fullMessage);
+        if (pattern2) {
+            actual = pattern2[1].trim();
+            expected = `not ${pattern2[2].trim()}`;
+            message = 'Values should not be equal';
+            return { message, expected, actual };
+        }
+        
+        // Jasmine pattern 3: "Expected <actual> to contain <expected>"
+        const pattern3 = /Expected\s+(.+?)\s+to\s+contain\s+(.+?)(?:\.|$)/i.exec(fullMessage);
+        if (pattern3) {
+            actual = pattern3[1].trim();
+            expected = `to contain ${pattern3[2].trim()}`;
+            message = 'Expected value to contain';
+            return { message, expected, actual };
+        }
+        
+        // Jasmine pattern 4: "Expected <actual> to match <expected>"
+        const pattern4 = /Expected\s+(.+?)\s+to\s+match\s+(.+?)(?:\.|$)/i.exec(fullMessage);
+        if (pattern4) {
+            actual = pattern4[1].trim();
+            expected = pattern4[2].trim();
+            message = 'Expected value to match pattern';
+            return { message, expected, actual };
+        }
+        
+        // Generic pattern: "expected: <value>, actual: <value>"
+        const pattern5 = /expected:?\s*(.+?)(?:,|\n).*?actual:?\s*(.+?)(?:\.|$)/i.exec(fullMessage);
+        if (pattern5) {
+            expected = pattern5[1].trim();
+            actual = pattern5[2].trim();
+            message = 'Values not equal';
+            return { message, expected, actual };
+        }
+        
+        // Fallback: extract first line as message
+        const firstLine = fullMessage.split('\n')[0];
+        message = firstLine || 'Assertion failed';
+        return { message, expected, actual };
+    }
+    
+    private parseJasmineError(fullMessage: string): string {
+        const messageParts: string[] = [];
+        const lines = fullMessage.split('\n');
+        
+        // Extract error type and message from first line
+        const firstLine = lines[0] || '';
+        const errorTypeMatch = /^([\w]+Error):\s*(.*)$/.exec(firstLine);
+        
+        if (errorTypeMatch) {
+            const errorType = errorTypeMatch[1];
+            const errorMsg = errorTypeMatch[2] || firstLine;
+            messageParts.push(`${errorType}: ${errorMsg}`);
+        } else {
+            messageParts.push(firstLine);
+        }
+        
+        // Extract stack trace information
+        let foundRelevantStack = false;
+        
+        for (const line of lines) {
+            // Look for "at" lines in the stack trace
+            const atMatch = /^\s*at\s+(?:Object\.)?([^\s]+)\s+\(([^:]+):(\d+):(\d+)\)/.exec(line);
+            if (atMatch) {
+                const method = atMatch[1].trim();
+                const file = atMatch[2].trim();
+                const lineNum = atMatch[3];
+                
+                // Skip Angular/Jasmine internal files, focus on user code
+                if (!file.includes('node_modules') && 
+                    !file.includes('karma') &&
+                    !file.includes('jasmine') &&
+                    !foundRelevantStack) {
+                    
+                    // Extract just the filename from path
+                    const fileName = file.split('/').pop() || file;
+                    
+                    if (method && method !== '<anonymous>') {
+                        messageParts.push(`  at ${fileName}:${lineNum} in ${method}()`);
+                    } else {
+                        messageParts.push(`  at ${fileName}:${lineNum}`);
+                    }
+                    foundRelevantStack = true;
+                }
+            }
+            
+            // Look for webpack/source map references
+            const webpackMatch = /^\s*at\s+webpack:\/\/\/\.\/([^:]+):(\d+):(\d+)/.exec(line);
+            if (webpackMatch && !foundRelevantStack) {
+                const file = webpackMatch[1];
+                const lineNum = webpackMatch[2];
+                messageParts.push(`  at ${file}:${lineNum}`);
+                foundRelevantStack = true;
+            }
+        }
+        
+        // If no stack trace was found, include first few lines
+        if (!foundRelevantStack && lines.length > 1) {
+            const additionalLines = lines.slice(1, 4).filter(l => l.trim()).join('\n');
+            if (additionalLines.trim()) {
+                messageParts.push(`  ${additionalLines.trim()}`);
+            }
+        }
+        
+        return messageParts.join('\n');
+    }
+    
     private decodeXmlEntities(text: string): string {
         return text
             .replace(/&lt;/g, '<')

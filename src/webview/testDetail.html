@@ -3,18 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cloud IDE Test</title>
+    <title>Test Details</title>
     <style>__SHARED_STYLES__</style>
     <style>__STYLES__</style>
 </head>
 <body>
     <div class="header">
-        <button id="runTestsBtn" onclick="runTests()">Run Tests (__WORKSPACE_TYPE__)</button>
+        <h2 id="testName">Test Details</h2>
     </div>
     
-    <div id="status" class="status" style="display: none;"></div>
-    
-    <div id="results" class="results"></div>
+    <div id="content" class="content">
+        <div class="loading">Select a test to view details</div>
+    </div>
 
     <script>__SCRIPT__</script>
 </body>

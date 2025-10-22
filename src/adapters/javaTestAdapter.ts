@@ -120,6 +120,16 @@ export class JavaTestAdapter implements TestAdapter {
         // Always parse the output, whether tests passed or failed
         const result = this.parseTestOutput(stdout, stderr, directory);
         
+        // Add full output to each test for detail panel
+        const fullOutput = `=== STDOUT ===\n${stdout}\n\n=== STDERR ===\n${stderr}`;
+        result.tests = result.tests.map(test => ({
+            ...test,
+            fullOutput: test.fullOutput || fullOutput
+        }));
+        
+        // Add the command to the result
+        result.command = 'mvn test';
+        
         // Validate: if we discovered tests but got no results, show them as errors
         if (this.discoveredTests.length > 0 && result.tests.length === 0) {
             const errorMessage = `Test execution failed: Discovered ${this.discoveredTests.length} tests but got no results. ` +
@@ -137,12 +147,14 @@ export class JavaTestAdapter implements TestAdapter {
                 tests: this.discoveredTests.map(test => ({
                     name: test.name,
                     status: 'error' as const,
-                    message: errorMessage
+                    message: errorMessage,
+                    fullOutput: fullOutput
                 })),
                 totalTests: this.discoveredTests.length,
                 passedTests: 0,
                 failedTests: 0,
-                skippedTests: 0
+                skippedTests: 0,
+                command: 'mvn test'
             };
         }
         
@@ -229,15 +241,33 @@ export class JavaTestAdapter implements TestAdapter {
                 status = 'failed';
                 const failureMatch = /<failure[^>]*message="([^"]*)"[^>]*>([\s\S]*?)<\/failure>/.exec(content);
                 if (failureMatch) {
-                    message = this.decodeXmlEntities(failureMatch[1]);
+                    const shortMessage = this.decodeXmlEntities(failureMatch[1]);
                     const fullMessage = this.decodeXmlEntities(failureMatch[2]);
                     
-                    // Try to extract expected and actual values
-                    const expectedMatch = /expected:?\s*<?([^>]+)>?/i.exec(fullMessage);
-                    const actualMatch = /but was:?\s*<?([^>]+)>?/i.exec(fullMessage);
+                    // Determine if this is an assertion failure or other error
+                    const isAssertionError = /AssertionError|assert|expected/i.test(shortMessage) || 
+                                            /expected.*but was|expected.*actual/i.test(fullMessage);
                     
-                    if (expectedMatch) {expected = expectedMatch[1].trim();}
-                    if (actualMatch) {actual = actualMatch[1].trim();}
+                    if (isAssertionError) {
+                        // Clean assertion failure - extract expected/actual
+                        const result = this.parseJavaAssertion(shortMessage, fullMessage);
+                        message = result.message;
+                        expected = result.expected;
+                        actual = result.actual;
+                    } else {
+                        // Non-assertion error - provide full context
+                        message = this.parseJavaError(shortMessage, fullMessage);
+                    }
+                }
+            } else if (content.includes('<error')) {
+                status = 'failed';
+                const errorMatch = /<error[^>]*message="([^"]*)"[^>]*>([\s\S]*?)<\/error>/.exec(content);
+                if (errorMatch) {
+                    const shortMessage = this.decodeXmlEntities(errorMatch[1]);
+                    const fullMessage = this.decodeXmlEntities(errorMatch[2]);
+                    
+                    // Errors are always non-assertion (NullPointerException, etc.)
+                    message = this.parseJavaError(shortMessage, fullMessage);
                 }
             } else if (content.includes('<skipped')) {
                 status = 'skipped';
@@ -284,6 +314,118 @@ export class JavaTestAdapter implements TestAdapter {
         return tests;
     }
 
+    private parseJavaAssertion(shortMessage: string, fullMessage: string): { message: string; expected: string; actual: string } {
+        let message = '';
+        let expected = '';
+        let actual = '';
+        
+        // Try multiple assertion patterns
+        // Pattern 1: "expected:<value> but was:<value>"
+        const pattern1 = /expected:\s*<([^>]+)>\s+but was:\s*<([^>]+)>/i.exec(fullMessage || shortMessage);
+        if (pattern1) {
+            expected = pattern1[1].trim();
+            actual = pattern1[2].trim();
+            message = 'Values not equal';
+            return { message, expected, actual };
+        }
+        
+        // Pattern 2: "expected [value] but found [value]"
+        const pattern2 = /expected\s*\[([^\]]+)\]\s+but (?:found|was)\s*\[([^\]]+)\]/i.exec(fullMessage || shortMessage);
+        if (pattern2) {
+            expected = pattern2[1].trim();
+            actual = pattern2[2].trim();
+            message = 'Values not equal';
+            return { message, expected, actual };
+        }
+        
+        // Pattern 3: "expected: value, actual: value"
+        const pattern3 = /expected:\s*([^,\n]+).*?actual:\s*([^,\n]+)/i.exec(fullMessage || shortMessage);
+        if (pattern3) {
+            expected = pattern3[1].trim();
+            actual = pattern3[2].trim();
+            message = 'Values not equal';
+            return { message, expected, actual };
+        }
+        
+        // Pattern 4: JUnit 5 format "expected: <value> but was: <value>"
+        const pattern4 = /expected:\s*<([^>]+)>\s+but was:\s*<([^>]+)>/i.exec(fullMessage || shortMessage);
+        if (pattern4) {
+            expected = pattern4[1].trim();
+            actual = pattern4[2].trim();
+            message = 'Values not equal';
+            return { message, expected, actual };
+        }
+        
+        // Fallback: just use the short message
+        message = shortMessage || 'Assertion failed';
+        return { message, expected, actual };
+    }
+    
+    private parseJavaError(shortMessage: string, fullMessage: string): string {
+        const messageParts: string[] = [];
+        
+        // Extract error type and message
+        const errorTypeMatch = /^([\w\.]+Exception|[\w\.]+Error):\s*(.*)$/m.exec(shortMessage);
+        if (errorTypeMatch) {
+            const errorType = errorTypeMatch[1].split('.').pop() || errorTypeMatch[1]; // Get simple name
+            const errorMsg = errorTypeMatch[2] || shortMessage;
+            messageParts.push(`${errorType}: ${errorMsg}`);
+        } else {
+            messageParts.push(shortMessage);
+        }
+        
+        // Extract stack trace information
+        const stackLines = fullMessage.split('\n');
+        let foundRelevantStack = false;
+        
+        for (const line of stackLines) {
+            // Look for "at" lines in the stack trace
+            const atMatch = /^\s*at\s+([^\(]+)\(([^:]+):(\d+)\)/.exec(line);
+            if (atMatch) {
+                const method = atMatch[1].trim();
+                const file = atMatch[2].trim();
+                const lineNum = atMatch[3];
+                
+                // Skip Java internal classes, focus on user code
+                if (!method.startsWith('java.') && 
+                    !method.startsWith('sun.') && 
+                    !method.startsWith('org.junit') &&
+                    !foundRelevantStack) {
+                    
+                    // Extract class and method name
+                    const methodParts = method.split('.');
+                    const methodName = methodParts.pop() || method;
+                    const className = methodParts.pop() || '';
+                    
+                    if (className) {
+                        messageParts.push(`  at ${file}:${lineNum} in ${className}.${methodName}()`);
+                    } else {
+                        messageParts.push(`  at ${file}:${lineNum} in ${methodName}()`);
+                    }
+                    foundRelevantStack = true;
+                }
+            }
+            
+            // Look for "Caused by" to show root cause
+            const causedByMatch = /^Caused by:\s+([\w\.]+Exception|[\w\.]+Error):\s*(.*)$/m.exec(line);
+            if (causedByMatch) {
+                const causeType = causedByMatch[1].split('.').pop() || causedByMatch[1];
+                const causeMsg = causedByMatch[2];
+                messageParts.push(`  Caused by: ${causeType}: ${causeMsg}`);
+            }
+        }
+        
+        // If no stack trace was found, include first few lines of full message
+        if (!foundRelevantStack && fullMessage && fullMessage !== shortMessage) {
+            const firstLines = fullMessage.split('\n').slice(0, 3).join('\n');
+            if (firstLines.trim()) {
+                messageParts.push(`  ${firstLines.trim()}`);
+            }
+        }
+        
+        return messageParts.join('\n');
+    }
+    
     private decodeXmlEntities(text: string): string {
         return text
             .replace(/&lt;/g, '<')

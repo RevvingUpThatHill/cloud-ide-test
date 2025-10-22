@@ -30,6 +30,7 @@ export interface TestCase {
     message?: string;
     expected?: string;
     actual?: string;
+    fullOutput?: string; // Full stack trace or detailed output for detail panel
 }
 
 /**
@@ -41,5 +42,6 @@ export interface TestResult {
     passedTests: number;
     failedTests: number;
     skippedTests: number;
+    command?: string; // The command that was used to run tests
 }
 
