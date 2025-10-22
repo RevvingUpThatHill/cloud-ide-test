@@ -163,6 +163,7 @@ export class JavaTestAdapter implements TestAdapter {
 
     private parseTestOutput(stdout: string, stderr: string, directory: string): TestResult {
         let tests: TestCase[] = [];
+        const output = stdout + '\n' + stderr; // Combined output for validation
         
         // Parse directly from console output (more reliable than XML files)
         console.log(`[Java Adapter] Parsing console output directly`);
@@ -186,9 +187,47 @@ export class JavaTestAdapter implements TestAdapter {
         
         tests = filteredTests;
 
+        // Add any discovered tests that weren't in the parsed results as "passed"
+        // Maven Surefire only outputs individual lines for failed/error/skipped tests by default
+        // Tests that passed are not shown individually, so we infer them from the summary
+        const parsedTestNames = new Set(tests.map(t => t.name));
+        for (const discoveredTest of this.discoveredTests) {
+            if (!parsedTestNames.has(discoveredTest.name)) {
+                // This test was discovered but not in the output, assume it passed
+                // This is the standard Maven behavior - passed tests are not reported individually
+                console.log(`[Java Adapter] Test ${discoveredTest.name} not in output, inferring passed status`);
+                tests.push({
+                    name: discoveredTest.name,
+                    status: 'passed'
+                });
+            }
+        }
+
         const passedTests = tests.filter(t => t.status === 'passed').length;
         const failedTests = tests.filter(t => t.status === 'failed').length;
         const skippedTests = tests.filter(t => t.status === 'skipped').length;
+
+        // Validate against Maven's summary line if present
+        // Pattern: "Tests run: 3, Failures: 1, Errors: 0, Skipped: 0"
+        const summaryMatch = /Tests run:\s*(\d+),\s*Failures:\s*(\d+),\s*Errors:\s*(\d+),\s*Skipped:\s*(\d+)/.exec(output);
+        if (summaryMatch) {
+            const [, totalRun, failures, errors, skipped] = summaryMatch;
+            const expectedTotal = parseInt(totalRun);
+            const expectedFailed = parseInt(failures) + parseInt(errors);
+            const expectedSkipped = parseInt(skipped);
+            const expectedPassed = expectedTotal - expectedFailed - expectedSkipped;
+            
+            console.log(`[Java Adapter] Maven summary: ${totalRun} run, ${failures} failures, ${errors} errors, ${skipped} skipped`);
+            console.log(`[Java Adapter] Our counts: ${tests.length} total, ${passedTests} passed, ${failedTests} failed, ${skippedTests} skipped`);
+            
+            // Warn if counts don't match (but don't fail - our inference should be correct)
+            if (tests.length !== expectedTotal) {
+                console.warn(`[Java Adapter] Test count mismatch: expected ${expectedTotal}, got ${tests.length}`);
+            }
+            if (passedTests !== expectedPassed) {
+                console.warn(`[Java Adapter] Passed test count mismatch: expected ${expectedPassed}, got ${passedTests}`);
+            }
+        }
 
         return {
             tests,
@@ -276,6 +315,27 @@ export class JavaTestAdapter implements TestAdapter {
     private parseMavenConsoleOutput(stdout: string, stderr: string): TestCase[] {
         const tests: TestCase[] = [];
         const output = stdout + '\n' + stderr;
+        
+        // Check for compilation errors first
+        if (output.includes('[ERROR] COMPILATION ERROR') || output.includes('BUILD FAILURE')) {
+            // Check if it's a compilation error (not a test failure)
+            const compilationErrorMatch = /\[ERROR\] COMPILATION ERROR/i.test(output);
+            const hasTestResults = /Tests run: \d+/.test(output);
+            
+            if (compilationErrorMatch && !hasTestResults) {
+                // This is a compilation error, not a test failure
+                // Extract compilation error details
+                const errorDetails = this.extractCompilationError(output);
+                
+                // Return all discovered tests as errors with compilation details
+                return this.discoveredTests.map(test => ({
+                    name: test.name,
+                    status: 'error' as const,
+                    message: errorDetails.message,
+                    fullOutput: errorDetails.fullOutput
+                }));
+            }
+        }
         
         // Parse Maven Surefire console output
         // Pattern: testMethodName(ClassName)  Time elapsed: X.XXX sec  <<< FAILURE!
@@ -381,6 +441,55 @@ export class JavaTestAdapter implements TestAdapter {
         }
         
         return messageParts.join('\n');
+    }
+
+    private extractCompilationError(output: string): { message: string; fullOutput: string } {
+        const lines = output.split('\n');
+        const errorLines: string[] = [];
+        let inErrorSection = false;
+        let firstError = '';
+        
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            
+            // Start capturing at COMPILATION ERROR
+            if (line.includes('[ERROR] COMPILATION ERROR')) {
+                inErrorSection = true;
+                errorLines.push(line);
+                continue;
+            }
+            
+            // Capture error details
+            if (inErrorSection) {
+                errorLines.push(line);
+                
+                // Extract the first specific error message
+                // Pattern: [ERROR] /path/to/File.java:[line,col] error message
+                const errorMatch = /\[ERROR\]\s+([^\[]+\.java):\[(\d+),(\d+)\]\s+(.+)/.exec(line);
+                if (errorMatch && !firstError) {
+                    const file = errorMatch[1].split('/').pop() || errorMatch[1];
+                    const lineNum = errorMatch[2];
+                    const errorMsg = errorMatch[4];
+                    firstError = `${file}:${lineNum} - ${errorMsg}`;
+                }
+                
+                // Stop at BUILD FAILURE or end of error section
+                if (line.includes('[INFO] BUILD FAILURE') || line.includes('[INFO] ---')) {
+                    break;
+                }
+            }
+        }
+        
+        // Create a concise message
+        let message = 'Compilation failed';
+        if (firstError) {
+            message = `Compilation error: ${firstError}`;
+        }
+        
+        // Full output includes the entire error section
+        const fullOutput = errorLines.join('\n').trim() || output;
+        
+        return { message, fullOutput };
     }
 
     private parseJavaAssertion(shortMessage: string, fullMessage: string): { message: string; expected: string; actual: string } {

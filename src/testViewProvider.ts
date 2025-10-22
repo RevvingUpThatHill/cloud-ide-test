@@ -85,6 +85,28 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
     }
 
     /**
+     * Wait for the webview to be ready and have processed the testsDiscovered message
+     */
+    private webviewReady: boolean = false;
+    
+    private async waitForWebviewReady(): Promise<void> {
+        if (this.webviewReady) {
+            return;
+        }
+        
+        // Wait up to 1 second for webview to signal it's ready
+        for (let i = 0; i < 10; i++) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            if (this.webviewReady) {
+                return;
+            }
+        }
+        
+        // If still not ready, proceed anyway (webview might already be initialized)
+        console.warn('Webview ready signal not received, proceeding anyway');
+    }
+
+    /**
      * Discover tests during extension activation (before webview is created)
      */
     public async discoverTestsOnActivation() {
@@ -160,6 +182,7 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
                 case 'webviewReady':
                     // Webview is ready, send tests immediately
                     console.log('[TestViewProvider] Webview ready, sending tests');
+                    this.webviewReady = true; // Signal that webview has loaded
                     this.discoverAndDisplayTests();
                     break;
                 case 'runTests':
@@ -318,6 +341,10 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
             });
             return;
         }
+
+        // Wait for webview to be ready and have test states populated
+        // This is especially important when invoked externally
+        await this.waitForWebviewReady();
 
         // Update UI to show loading state
         this._view.webview.postMessage({
