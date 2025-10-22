@@ -240,28 +240,15 @@ module.exports = function(config) {
 
         // Filter to only include tests that were discovered
         // This prevents phantom "Failed Test 1" entries from appearing
-        // Note: Parsed test names include component name (e.g., "AppComponent > should render")
-        // but discovered names are just the description (e.g., "should render")
         const discoveredTestNames = new Set(this.discoveredTests.map(t => t.name));
-        tests = tests.filter(test => {
-            // Extract just the test description after " > "
-            const parts = test.name.split(' > ');
-            const testDescription = parts.length > 1 ? parts[1] : test.name;
-            return discoveredTestNames.has(testDescription);
-        });
+        tests = tests.filter(test => discoveredTestNames.has(test.name));
 
         // Add any discovered tests that weren't in the parsed results as "passed"
         // Karma typically only outputs failed tests explicitly
-        // Note: Parsed test names include component name (e.g., "AppComponent > should render")
-        // but discovered names are just the description (e.g., "should render")
-        const parsedTestDescriptions = new Set(tests.map(t => {
-            // Extract just the test description after " > "
-            const parts = t.name.split(' > ');
-            return parts.length > 1 ? parts[1] : t.name;
-        }));
+        const parsedTestNames = new Set(tests.map(t => t.name));
         
         for (const discoveredTest of this.discoveredTests) {
-            if (!parsedTestDescriptions.has(discoveredTest.name)) {
+            if (!parsedTestNames.has(discoveredTest.name)) {
                 // This test was discovered but not in the output, assume it passed
                 console.log(`[Angular Adapter] Test ${discoveredTest.name} not in output, inferring passed status`);
                 tests.push({
@@ -359,9 +346,8 @@ module.exports = function(config) {
         let match;
         while ((match = failedTestPattern.exec(cleanOutput)) !== null) {
             const [fullMatch, componentName, testDescription] = match;
-            const fullName = `${componentName} > ${testDescription}`;
             
-            console.log(`[Angular Adapter] Found failed test: ${fullName}`);
+            console.log(`[Angular Adapter] Found failed test: ${componentName} > ${testDescription}`);
             
             let message = '';
             let fullOutput = '';
@@ -382,8 +368,9 @@ module.exports = function(config) {
                 fullOutput = errorSection;
             }
             
+            // Use just the test description (not component name) to match discovered tests
             tests.push({
-                name: fullName,
+                name: testDescription,
                 status: 'failed',
                 message: message || undefined,
                 fullOutput: fullOutput || undefined
