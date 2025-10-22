@@ -172,11 +172,15 @@ module.exports = function(config) {
         // Always parse the output, whether tests passed or failed
         const result = this.parseTestOutput(stdout, stderr, directory);
         
+        // Clean ANSI escape codes from output for display
+        const cleanStdout = stdout.replace(/\x1B\[[0-9;]*[A-Za-z]/g, '');
+        const cleanStderr = stderr.replace(/\x1B\[[0-9;]*[A-Za-z]/g, '');
+        
         // Add full output to each test for detail panel
-        const fullOutput = `=== STDOUT ===\n${stdout}\n\n=== STDERR ===\n${stderr}`;
+        const fullOutput = `=== STDOUT ===\n${cleanStdout}\n\n=== STDERR ===\n${cleanStderr}`;
         result.tests = result.tests.map(test => ({
             ...test,
-            fullOutput: test.fullOutput || fullOutput
+            fullOutput: test.fullOutput ? test.fullOutput.replace(/\x1B\[[0-9;]*[A-Za-z]/g, '') : fullOutput
         }));
         
         // Add the command to the result
@@ -329,23 +333,30 @@ module.exports = function(config) {
     private parseKarmaConsoleOutput(output: string): TestCase[] {
         const tests: TestCase[] = [];
         
+        // Remove ANSI escape codes that interfere with parsing
+        const cleanOutput = output.replace(/\x1B\[\d+[A-Z]/g, '');
+        
+        console.log('[Angular Adapter] Parsing Karma output for failed tests...');
+        
         // Parse failed tests from Karma console output
         // Pattern: "Chrome Headless ... ComponentName testName FAILED"
         const failedTestPattern = /(?:Chrome|PhantomJS|Firefox)[^\n]*?\s+([A-Z]\w+(?:\s+\w+)*)\s+(should\s+[^\n]+?)\s+FAILED/g;
         
         let match;
-        while ((match = failedTestPattern.exec(output)) !== null) {
+        while ((match = failedTestPattern.exec(cleanOutput)) !== null) {
             const [fullMatch, componentName, testDescription] = match;
             const fullName = `${componentName} > ${testDescription}`;
+            
+            console.log(`[Angular Adapter] Found failed test: ${fullName}`);
             
             let message = '';
             let fullOutput = '';
             
             // Extract the error details that follow this test
             const errorStartIndex = match.index + fullMatch.length;
-            const nextTestMatch = /(?:Chrome|PhantomJS|Firefox)[^\n]*?\s+[A-Z]\w+/.exec(output.substring(errorStartIndex));
-            const errorEndIndex = nextTestMatch ? errorStartIndex + nextTestMatch.index : output.length;
-            const errorSection = output.substring(errorStartIndex, errorEndIndex).trim();
+            const nextTestMatch = /(?:Chrome|PhantomJS|Firefox)[^\n]*?\s+(?:Executed|[A-Z]\w+)/.exec(cleanOutput.substring(errorStartIndex));
+            const errorEndIndex = nextTestMatch ? errorStartIndex + nextTestMatch.index : cleanOutput.length;
+            const errorSection = cleanOutput.substring(errorStartIndex, errorEndIndex).trim();
             
             // Extract error message
             const errorMatch = /Error:\s*(.+?)(?:\n|$)/.exec(errorSection);
@@ -364,6 +375,8 @@ module.exports = function(config) {
                 fullOutput: fullOutput || undefined
             });
         }
+        
+        console.log(`[Angular Adapter] Parsed ${tests.length} failed tests from console output`);
         
         return tests;
     }

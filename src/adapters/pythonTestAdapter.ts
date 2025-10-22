@@ -122,11 +122,15 @@ export class PythonTestAdapter implements TestAdapter {
         // Always parse the output, whether tests passed or failed
         const result = this.parseTestOutput(stdout, stderr, directory);
         
+        // Clean ANSI escape codes from output for display
+        const cleanStdout = stdout.replace(/\x1B\[[0-9;]*[A-Za-z]/g, '');
+        const cleanStderr = stderr.replace(/\x1B\[[0-9;]*[A-Za-z]/g, '');
+        
         // Add full output to each test for detail panel
-        const fullOutput = `=== STDOUT ===\n${stdout}\n\n=== STDERR ===\n${stderr}`;
+        const fullOutput = `=== STDOUT ===\n${cleanStdout}\n\n=== STDERR ===\n${cleanStderr}`;
         result.tests = result.tests.map(test => ({
             ...test,
-            fullOutput: test.fullOutput || fullOutput // Use test-specific output if available
+            fullOutput: test.fullOutput ? test.fullOutput.replace(/\x1B\[[0-9;]*[A-Za-z]/g, '') : fullOutput // Use test-specific output if available
         }));
         
         // Add the successful command to the result
