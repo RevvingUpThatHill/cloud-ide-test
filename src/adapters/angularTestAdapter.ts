@@ -81,11 +81,28 @@ export class AngularTestAdapter implements TestAdapter {
         
         try {
             // Run Karma tests in single-run mode
-            const command = 'npm run test -- --watch=false --browsers=ChromeHeadless';
+            // Add CHROME_BIN for EC2/Docker environments
+            const env = { 
+                ...process.env, 
+                CI: 'true', // Force CI mode for single run
+                CHROME_BIN: process.env.CHROME_BIN || '/snap/bin/chromium' // Fallback to snap chromium
+            };
+            
+            // Try with ChromeHeadless first, then fallback to Chrome with explicit no-sandbox
+            let command = 'npm run test -- --watch=false --browsers=ChromeHeadless';
+            
+            // Check if running as root (common in EC2/Docker)
+            const isRoot = process.getuid && process.getuid() === 0;
+            if (isRoot) {
+                // When running as root, we need to pass --no-sandbox flag
+                // Use npx to run karma directly with custom launcher config
+                command = 'npx karma start --single-run --browsers=ChromeHeadlessNoSandbox --customLaunchers=\'{"ChromeHeadlessNoSandbox":{"base":"ChromeHeadless","flags":["--no-sandbox","--disable-setuid-sandbox"]}}\'';
+            }
+            
             const result = await execAsync(command, {
                 cwd: directory,
                 maxBuffer: 10 * 1024 * 1024, // 10MB buffer
-                env: { ...process.env, CI: 'true' } // Force CI mode for single run
+                env: env
             });
             stdout = result.stdout;
             stderr = result.stderr;
