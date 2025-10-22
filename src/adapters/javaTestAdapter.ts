@@ -325,6 +325,8 @@ export class JavaTestAdapter implements TestAdapter {
         const tests: TestCase[] = [];
         const output = stdout + '\n' + stderr;
         
+        console.log(`[Java Adapter] Parsing Maven console output (${output.length} chars)`);
+        
         // Check for compilation errors first
         if (output.includes('[ERROR] COMPILATION ERROR') || output.includes('BUILD FAILURE')) {
             // Check if it's a compilation error (not a test failure)
@@ -347,16 +349,21 @@ export class JavaTestAdapter implements TestAdapter {
         }
         
         // Parse Maven Surefire console output
-        // Pattern: [ERROR] testMethodName(ClassName)  Time elapsed: X.XXX sec  <<< FAILURE!
-        // Note: [ERROR] prefix is optional (only present for failures)
-        const testResultPattern = /(?:\[ERROR\]\s+)?(\w+)\((\w+)\)\s+Time elapsed:\s+([\d.]+)\s+sec(?:\s+<<<\s+(FAILURE|ERROR)!)?/gm;
+        // Pattern: testMethodName(ClassName)  Time elapsed: X.XXX sec  <<< FAILURE!
+        // Also handles: testMethodName(ClassName)  Time elapsed: X.XXX s  <<< FAILURE!
+        // The [ERROR] prefix may appear in the line but we don't need to match it
+        // Use \s+ to handle variable whitespace (spaces, tabs, etc.)
+        const testResultPattern = /(\w+)\((\w+)\)\s+Time elapsed:\s+([\d.]+)\s+s(?:ec)?(?:\s+<<<\s+(FAILURE|ERROR)!)?/gm;
         
         let match;
+        let matchCount = 0;
         while ((match = testResultPattern.exec(output)) !== null) {
-            const [, methodName, className, timeStr, result] = match;
+            matchCount++;
+            const [fullMatch, methodName, className, timeStr, result] = match;
             const fullName = `${className}.${methodName}`;
             const duration = Math.round(parseFloat(timeStr) * 1000);
             
+            console.log(`[Java Adapter] Match ${matchCount}: "${fullMatch.substring(0, 80)}..."`);
             console.log(`[Java Adapter] Parsed test from Maven output: ${fullName} (status: ${result || 'passed'})`);
             
             let status: 'passed' | 'failed' | 'skipped' = 'passed';
@@ -422,6 +429,8 @@ export class JavaTestAdapter implements TestAdapter {
                 fullOutput: fullOutput || undefined
             });
         }
+        
+        console.log(`[Java Adapter] Total matches found: ${matchCount}, tests parsed: ${tests.length}`);
         
         return tests;
     }
