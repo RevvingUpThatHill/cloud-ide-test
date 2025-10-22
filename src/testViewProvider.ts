@@ -69,11 +69,18 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
      * Ensure the webview is visible (open it if closed)
      */
     public async ensureWebviewVisible(): Promise<void> {
+        // Always try to focus the view to ensure it's visible
+        await vscode.commands.executeCommand('cloudIdeTestView.focus');
+        
+        // If view wasn't initialized, wait for it
         if (!this._view) {
-            // Webview is not open, open it by focusing the view
-            await vscode.commands.executeCommand('cloudIdeTestView.focus');
-            // Give it a moment to initialize
-            await new Promise(resolve => setTimeout(resolve, 300));
+            // Wait up to 2 seconds for view to initialize
+            for (let i = 0; i < 20; i++) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+                if (this._view) {
+                    break;
+                }
+            }
         }
     }
 

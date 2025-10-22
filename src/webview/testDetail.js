@@ -88,7 +88,7 @@ function displayTestDetails(test, command) {
     if (command) {
         html += `<div class="detail-section">
             <h3>Test Command</h3>
-            <p style="margin: 0 0 8px 0; font-size: 11px; opacity: 0.7;">Run this command in your terminal to execute the tests:</p>
+            <p style="margin: 0 0 8px 0; font-size: 11px; opacity: 0.7;">You can run the tests manually in your terminal using this command:</p>
             <div class="command-box">${escapeHtml(command)}</div>
         </div>`;
     }

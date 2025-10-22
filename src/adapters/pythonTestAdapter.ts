@@ -316,6 +316,7 @@ export class PythonTestAdapter implements TestAdapter {
             let message = '';
             let expected = '';
             let actual = '';
+            let fullOutput = ''; // Individual test output
             
             if (result === 'PASSED') {
                 status = 'passed';
@@ -334,6 +335,8 @@ export class PythonTestAdapter implements TestAdapter {
                 
                 if (failureMatch) {
                     const failureSection = failureMatch[0];
+                    // Store the full failure section for this specific test
+                    fullOutput = failureSection;
                     
                     // Check what type of error we have
                     const errorLineMatch = /E\s+(\w+Error):\s*(.+?)$/m.exec(failureSection);
@@ -435,7 +438,8 @@ export class PythonTestAdapter implements TestAdapter {
                 status,
                 message: message || undefined,
                 expected: expected || undefined,
-                actual: actual || undefined
+                actual: actual || undefined,
+                fullOutput: fullOutput || undefined // Individual test's failure section
             });
         }
         
@@ -474,6 +478,7 @@ export class PythonTestAdapter implements TestAdapter {
             let message = '';
             let expected = '';
             let actual = '';
+            let fullOutput = ''; // Individual test output
             
             if (result === 'ok') {
                 status = 'passed';
@@ -481,18 +486,28 @@ export class PythonTestAdapter implements TestAdapter {
                 status = 'skipped';
             } else {
                 status = 'failed';
-                // Try to find the error message for this test
-                const failPattern = new RegExp(`FAIL: ${methodName}[\\s\\S]*?AssertionError:\\s*([^\\n]+)`, 'i');
-                const failMatch = failPattern.exec(output);
-                if (failMatch) {
-                    message = failMatch[1].trim();
+                // Try to find the full error section for this test
+                const failSectionPattern = new RegExp(
+                    `={70}\\s*FAIL: ${methodName}[\\s\\S]*?(?=={70}|$)`,
+                    'i'
+                );
+                const failSectionMatch = failSectionPattern.exec(output);
+                if (failSectionMatch) {
+                    fullOutput = failSectionMatch[0]; // Store full failure section
                     
-                    // Try to extract expected vs actual from assertion message
-                    // Format: "actual != expected" or "actual == expected (for negative assertions)"
-                    const comparisonMatch = /^(.+?)\s*!=\s*(.+)$/.exec(message);
-                    if (comparisonMatch) {
-                        actual = comparisonMatch[1].trim();
-                        expected = comparisonMatch[2].trim();
+                    // Extract concise message
+                    const failPattern = new RegExp(`FAIL: ${methodName}[\\s\\S]*?AssertionError:\\s*([^\\n]+)`, 'i');
+                    const failMatch = failPattern.exec(fullOutput);
+                    if (failMatch) {
+                        message = failMatch[1].trim();
+                        
+                        // Try to extract expected vs actual from assertion message
+                        // Format: "actual != expected" or "actual == expected (for negative assertions)"
+                        const comparisonMatch = /^(.+?)\s*!=\s*(.+)$/.exec(message);
+                        if (comparisonMatch) {
+                            actual = comparisonMatch[1].trim();
+                            expected = comparisonMatch[2].trim();
+                        }
                     }
                 }
             }
@@ -502,7 +517,8 @@ export class PythonTestAdapter implements TestAdapter {
                 status,
                 message: message || undefined,
                 expected: expected || undefined,
-                actual: actual || undefined
+                actual: actual || undefined,
+                fullOutput: fullOutput || undefined // Individual test's failure section
             });
         }
         
