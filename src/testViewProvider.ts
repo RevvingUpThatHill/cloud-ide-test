@@ -358,9 +358,9 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
         const startTime = Date.now();
         
         try {
-            // Run tests using the appropriate test adapter with 1 minute timeout
+            // Run tests using the appropriate test adapter with 2 minute timeout
             const timeoutPromise = new Promise<never>((_, reject) => {
-                setTimeout(() => reject(new Error('Test execution timed out after 1 minute')), 60000);
+                setTimeout(() => reject(new Error('Test execution timed out after 2 minutes')), 120000);
             });
             
             const results = await Promise.race([
@@ -507,10 +507,15 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
         }
 
         // Create new panel
+        // Note: VSCode doesn't provide API to control webview size directly
+        // The size is determined by the user's editor layout and column splits
         this._detailPanel = vscode.window.createWebviewPanel(
             'testDetails',
             'Test Details',
-            vscode.ViewColumn.Two,
+            {
+                viewColumn: vscode.ViewColumn.Two,
+                preserveFocus: false // Focus the detail panel when it opens
+            },
             {
                 enableScripts: true,
                 retainContextWhenHidden: true

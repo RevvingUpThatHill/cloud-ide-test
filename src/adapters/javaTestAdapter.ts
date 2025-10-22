@@ -44,7 +44,9 @@ export class JavaTestAdapter implements TestAdapter {
             let packageName = '';
             let currentClass = '';
             
-            for (const line of lines) {
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                
                 // Find package declaration
                 const packageMatch = /package\s+([\w.]+);/.exec(line);
                 if (packageMatch) {
@@ -60,9 +62,11 @@ export class JavaTestAdapter implements TestAdapter {
                 // Find test methods (marked with @Test annotation)
                 if (line.includes('@Test')) {
                     // Look ahead to next non-empty line for method name
-                    const nextLineIndex = lines.indexOf(line) + 1;
-                    if (nextLineIndex < lines.length) {
-                        const methodMatch = /public\s+void\s+(\w+)\s*\(/.exec(lines[nextLineIndex]);
+                    for (let j = i + 1; j < lines.length; j++) {
+                        const nextLine = lines[j].trim();
+                        if (nextLine === '') continue; // Skip empty lines
+                        
+                        const methodMatch = /public\s+void\s+(\w+)\s*\(/.exec(nextLine);
                         if (methodMatch && currentClass) {
                             // Use fully qualified class name to match Maven XML reports
                             const fullClassName = packageName ? `${packageName}.${currentClass}` : currentClass;
@@ -72,6 +76,7 @@ export class JavaTestAdapter implements TestAdapter {
                                 filePath: path.relative(directory, filePath)
                             });
                         }
+                        break; // Only check the next non-empty line
                     }
                 }
             }
@@ -342,14 +347,17 @@ export class JavaTestAdapter implements TestAdapter {
         }
         
         // Parse Maven Surefire console output
-        // Pattern: testMethodName(ClassName)  Time elapsed: X.XXX sec  <<< FAILURE!
-        const testResultPattern = /^(\w+)\((\w+)\)\s+Time elapsed:\s+([\d.]+)\s+sec(?:\s+<<<\s+(FAILURE|ERROR)!)?/gm;
+        // Pattern: [ERROR] testMethodName(ClassName)  Time elapsed: X.XXX sec  <<< FAILURE!
+        // Note: [ERROR] prefix is optional (only present for failures)
+        const testResultPattern = /(?:\[ERROR\]\s+)?(\w+)\((\w+)\)\s+Time elapsed:\s+([\d.]+)\s+sec(?:\s+<<<\s+(FAILURE|ERROR)!)?/gm;
         
         let match;
         while ((match = testResultPattern.exec(output)) !== null) {
             const [, methodName, className, timeStr, result] = match;
             const fullName = `${className}.${methodName}`;
             const duration = Math.round(parseFloat(timeStr) * 1000);
+            
+            console.log(`[Java Adapter] Parsed test from Maven output: ${fullName} (status: ${result || 'passed'})`);
             
             let status: 'passed' | 'failed' | 'skipped' = 'passed';
             let message = '';

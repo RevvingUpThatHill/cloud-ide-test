@@ -7,6 +7,7 @@ body {
     flex-direction: column;
     height: 100vh;
     font-size: 12px;
+    min-width: 300px; /* Ensure content doesn't get too cramped */
 }
 
 /* Header section */
