@@ -236,6 +236,7 @@ export class JavaTestAdapter implements TestAdapter {
             let message = '';
             let expected = '';
             let actual = '';
+            let fullOutput = ''; // Individual test output
             
             if (content.includes('<failure')) {
                 status = 'failed';
@@ -243,6 +244,9 @@ export class JavaTestAdapter implements TestAdapter {
                 if (failureMatch) {
                     const shortMessage = this.decodeXmlEntities(failureMatch[1]);
                     const fullMessage = this.decodeXmlEntities(failureMatch[2]);
+                    
+                    // Store the full stack trace for this test
+                    fullOutput = fullMessage;
                     
                     // Determine if this is an assertion failure or other error
                     const isAssertionError = /AssertionError|assert|expected/i.test(shortMessage) || 
@@ -266,6 +270,9 @@ export class JavaTestAdapter implements TestAdapter {
                     const shortMessage = this.decodeXmlEntities(errorMatch[1]);
                     const fullMessage = this.decodeXmlEntities(errorMatch[2]);
                     
+                    // Store the full stack trace for this test
+                    fullOutput = fullMessage;
+                    
                     // Errors are always non-assertion (NullPointerException, etc.)
                     message = this.parseJavaError(shortMessage, fullMessage);
                 }
@@ -279,7 +286,8 @@ export class JavaTestAdapter implements TestAdapter {
                 duration: Math.round(parseFloat(time) * 1000),
                 message: message || undefined,
                 expected: expected || undefined,
-                actual: actual || undefined
+                actual: actual || undefined,
+                fullOutput: fullOutput || undefined // Individual test's stack trace
             });
         }
         
@@ -319,9 +327,12 @@ export class JavaTestAdapter implements TestAdapter {
         let expected = '';
         let actual = '';
         
+        // Combine both messages for pattern matching
+        const combinedMessage = (shortMessage || '') + '\n' + (fullMessage || '');
+        
         // Try multiple assertion patterns
-        // Pattern 1: "expected:<value> but was:<value>"
-        const pattern1 = /expected:\s*<([^>]+)>\s+but was:\s*<([^>]+)>/i.exec(fullMessage || shortMessage);
+        // Pattern 1: "expected:<value> but was:<value>" (most common JUnit format)
+        const pattern1 = /expected:\s*<([^>]+)>\s+but was:\s*<([^>]+)>/i.exec(combinedMessage);
         if (pattern1) {
             expected = pattern1[1].trim();
             actual = pattern1[2].trim();
@@ -330,7 +341,7 @@ export class JavaTestAdapter implements TestAdapter {
         }
         
         // Pattern 2: "expected [value] but found [value]"
-        const pattern2 = /expected\s*\[([^\]]+)\]\s+but (?:found|was)\s*\[([^\]]+)\]/i.exec(fullMessage || shortMessage);
+        const pattern2 = /expected\s*\[([^\]]+)\]\s+but (?:found|was)\s*\[([^\]]+)\]/i.exec(combinedMessage);
         if (pattern2) {
             expected = pattern2[1].trim();
             actual = pattern2[2].trim();
@@ -339,19 +350,10 @@ export class JavaTestAdapter implements TestAdapter {
         }
         
         // Pattern 3: "expected: value, actual: value"
-        const pattern3 = /expected:\s*([^,\n]+).*?actual:\s*([^,\n]+)/i.exec(fullMessage || shortMessage);
+        const pattern3 = /expected:\s*([^,\n]+).*?actual:\s*([^,\n]+)/i.exec(combinedMessage);
         if (pattern3) {
             expected = pattern3[1].trim();
             actual = pattern3[2].trim();
-            message = 'Values not equal';
-            return { message, expected, actual };
-        }
-        
-        // Pattern 4: JUnit 5 format "expected: <value> but was: <value>"
-        const pattern4 = /expected:\s*<([^>]+)>\s+but was:\s*<([^>]+)>/i.exec(fullMessage || shortMessage);
-        if (pattern4) {
-            expected = pattern4[1].trim();
-            actual = pattern4[2].trim();
             message = 'Values not equal';
             return { message, expected, actual };
         }
