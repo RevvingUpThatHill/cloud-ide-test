@@ -40,6 +40,11 @@ body {
     white-space: pre-wrap;
     word-wrap: break-word;
     line-height: 1.5;
+    user-select: text;
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    -ms-user-select: text;
+    cursor: text;
 }
 
 .detail-section code {
@@ -91,6 +96,11 @@ body {
     overflow-x: auto;
     white-space: pre;
     line-height: 1.5;
+    user-select: text;
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    -ms-user-select: text;
+    cursor: text;
 }
 
 /* Info grid for key-value pairs */

@@ -1,5 +1,13 @@
 const vscode = acquireVsCodeApi();
 
+// Enable right-click context menu for copying text
+document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('contextmenu', (e) => {
+        // Allow default context menu on text elements
+        e.stopPropagation();
+    });
+});
+
 function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;

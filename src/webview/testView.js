@@ -1,5 +1,13 @@
 const vscode = acquireVsCodeApi();
 
+// Enable right-click context menu for copying text
+document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('contextmenu', (e) => {
+        // Allow default context menu on text elements
+        e.stopPropagation();
+    });
+});
+
 // Store test states
 let testStates = new Map(); // testName -> { state, message, duration, expected, actual, errorType }
 let previousTestStates = new Map(); // Store previous run results to detect changes
