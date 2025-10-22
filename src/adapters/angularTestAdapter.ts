@@ -88,15 +88,48 @@ export class AngularTestAdapter implements TestAdapter {
                 CHROME_BIN: process.env.CHROME_BIN || '/snap/bin/chromium' // Fallback to snap chromium
             };
             
-            // Try with ChromeHeadless first, then fallback to Chrome with explicit no-sandbox
             let command = 'npm run test -- --watch=false --browsers=ChromeHeadless';
+            let karmaConfigPath: string | null = null;
             
             // Check if running as root (common in EC2/Docker)
             const isRoot = process.getuid && process.getuid() === 0;
             if (isRoot) {
-                // When running as root, we need to pass --no-sandbox flag
-                // Use npx to run karma directly with custom launcher config
-                command = 'npx karma start --single-run --browsers=ChromeHeadlessNoSandbox --customLaunchers=\'{"ChromeHeadlessNoSandbox":{"base":"ChromeHeadless","flags":["--no-sandbox","--disable-setuid-sandbox"]}}\'';
+                // When running as root, create a temporary karma config with --no-sandbox
+                karmaConfigPath = path.join(directory, 'karma-nosandbox.conf.js');
+                const karmaConfig = `
+// Temporary karma config for running tests as root (EC2/Docker)
+module.exports = function(config) {
+  // Load the original karma config if it exists
+  let originalConfig = {};
+  try {
+    const originalConfigPath = require.resolve('./karma.conf.js');
+    const originalConfigFn = require(originalConfigPath);
+    originalConfigFn({ set: (cfg) => { originalConfig = cfg; } });
+  } catch (e) {
+    // No original config, use defaults
+  }
+
+  config.set({
+    ...originalConfig,
+    customLaunchers: {
+      ...originalConfig.customLaunchers,
+      ChromeHeadless: {
+        base: 'Chrome',
+        flags: [
+          '--headless',
+          '--disable-gpu',
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--remote-debugging-port=9222'
+        ]
+      }
+    },
+    singleRun: true
+  });
+};
+`;
+                fs.writeFileSync(karmaConfigPath, karmaConfig, 'utf8');
+                command = `npm run test -- --karma-config=karma-nosandbox.conf.js --watch=false --browsers=ChromeHeadless`;
             }
             
             const result = await execAsync(command, {
@@ -104,12 +137,28 @@ export class AngularTestAdapter implements TestAdapter {
                 maxBuffer: 10 * 1024 * 1024, // 10MB buffer
                 env: env
             });
+            
             stdout = result.stdout;
             stderr = result.stderr;
+            
+            // Clean up temporary karma config
+            if (karmaConfigPath && fs.existsSync(karmaConfigPath)) {
+                fs.unlinkSync(karmaConfigPath);
+            }
         } catch (error: any) {
             // Command failed (non-zero exit code) - this is NORMAL when tests fail
             stdout = error.stdout || '';
             stderr = error.stderr || '';
+            
+            // Clean up temporary karma config even on error
+            const karmaConfigPath = path.join(directory, 'karma-nosandbox.conf.js');
+            if (fs.existsSync(karmaConfigPath)) {
+                try {
+                    fs.unlinkSync(karmaConfigPath);
+                } catch (cleanupError) {
+                    // Ignore cleanup errors
+                }
+            }
             
             if (!stdout && !stderr) {
                 console.error('[Angular Adapter] Test command failed with no output:');
