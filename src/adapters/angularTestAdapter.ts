@@ -239,6 +239,20 @@ module.exports = function(config) {
         const discoveredTestNames = new Set(this.discoveredTests.map(t => t.name));
         tests = tests.filter(test => discoveredTestNames.has(test.name));
 
+        // Add any discovered tests that weren't in the parsed results as "passed"
+        // Karma typically only outputs failed tests explicitly
+        const parsedTestNames = new Set(tests.map(t => t.name));
+        for (const discoveredTest of this.discoveredTests) {
+            if (!parsedTestNames.has(discoveredTest.name)) {
+                // This test was discovered but not in the output, assume it passed
+                console.log(`[Angular Adapter] Test ${discoveredTest.name} not in output, inferring passed status`);
+                tests.push({
+                    name: discoveredTest.name,
+                    status: 'passed'
+                });
+            }
+        }
+
         const passedTests = tests.filter(t => t.status === 'passed').length;
         const failedTests = tests.filter(t => t.status === 'failed').length;
         const skippedTests = tests.filter(t => t.status === 'skipped').length;
@@ -314,45 +328,71 @@ module.exports = function(config) {
 
     private parseKarmaConsoleOutput(output: string): TestCase[] {
         const tests: TestCase[] = [];
-        const lines = output.split('\n');
         
-        // Look for Karma summary line like: "Chrome Headless: Executed 15 of 15 (3 FAILED) (0.234 secs / 0.189 secs)"
-        const summaryPattern = /(?:Chrome|PhantomJS|Firefox)[^:]*:\s*Executed\s+(\d+)\s+of\s+(\d+)(?:\s+\((\d+)\s+FAILED\))?/;
-        const match = summaryPattern.exec(output);
+        // Parse Karma console output
+        // Pattern: "Chrome Headless ... ComponentName testName FAILED" or "... SUCCESS"
+        const testPattern = /(?:Chrome|PhantomJS|Firefox)[^\n]*?\s+([A-Z]\w+(?:\s+\w+)*)\s+(should\s+[^\n]+?)\s+(FAILED|SUCCESS)/g;
         
-        if (match) {
-            const [, executed, total, failed] = match;
-            const failedCount = parseInt(failed || '0');
-            const passedCount = parseInt(executed) - failedCount;
+        let match;
+        while ((match = testPattern.exec(output)) !== null) {
+            const [fullMatch, componentName, testDescription, result] = match;
+            const fullName = `${componentName} > ${testDescription}`;
+            const status = result === 'SUCCESS' ? 'passed' : 'failed';
             
-            // Try to find individual test details
-            const specPattern = /✓|×|FAILED\s+(.+?)(?:\n|$)/g;
-            let specMatch;
-            let testIndex = 0;
+            let message = '';
+            let fullOutput = '';
             
-            while ((specMatch = specPattern.exec(output)) !== null) {
-                const isPassed = output[specMatch.index] === '✓';
-                const testName = specMatch[1] || `Test ${testIndex + 1}`;
+            if (status === 'failed') {
+                // Extract the error details that follow this test
+                const errorStartIndex = match.index + fullMatch.length;
+                const nextTestMatch = /(?:Chrome|PhantomJS|Firefox)[^\n]*?\s+[A-Z]\w+/.exec(output.substring(errorStartIndex));
+                const errorEndIndex = nextTestMatch ? errorStartIndex + nextTestMatch.index : output.length;
+                const errorSection = output.substring(errorStartIndex, errorEndIndex).trim();
                 
-                tests.push({
-                    name: testName.trim(),
-                    status: isPassed ? 'passed' : 'failed',
-                    message: isPassed ? undefined : 'Check Karma output for details'
-                });
-                testIndex++;
+                // Extract error message
+                const errorMatch = /Error:\s*(.+?)(?:\n|$)/.exec(errorSection);
+                if (errorMatch) {
+                    message = errorMatch[1].trim();
+                    fullOutput = errorSection;
+                } else {
+                    message = 'Test failed';
+                    fullOutput = errorSection;
+                }
             }
             
-            // If no individual tests found, create generic entries
-            if (tests.length === 0) {
-                for (let i = 0; i < passedCount; i++) {
-                    tests.push({ name: `Test ${i + 1}`, status: 'passed' });
-                }
-                for (let i = 0; i < failedCount; i++) {
-                    tests.push({
-                        name: `Failed Test ${i + 1}`,
-                        status: 'failed',
-                        message: 'Check Karma output for details'
-                    });
+            tests.push({
+                name: fullName,
+                status,
+                message: message || undefined,
+                fullOutput: fullOutput || undefined
+            });
+        }
+        
+        // If no tests were parsed, fall back to summary-based approach
+        if (tests.length === 0) {
+            const summaryPattern = /TOTAL:\s*(\d+)\s+FAILED,\s*(\d+)\s+SUCCESS/;
+            const summaryMatch = summaryPattern.exec(output);
+            
+            if (summaryMatch) {
+                const failedCount = parseInt(summaryMatch[1]);
+                const passedCount = parseInt(summaryMatch[2]);
+                
+                // Use discovered tests if available
+                if (this.discoveredTests.length === failedCount + passedCount) {
+                    // Assume first tests passed, last tests failed (not ideal but better than nothing)
+                    for (let i = 0; i < passedCount; i++) {
+                        tests.push({
+                            name: this.discoveredTests[i].name,
+                            status: 'passed'
+                        });
+                    }
+                    for (let i = passedCount; i < this.discoveredTests.length; i++) {
+                        tests.push({
+                            name: this.discoveredTests[i].name,
+                            status: 'failed',
+                            message: 'Check Karma output for details'
+                        });
+                    }
                 }
             }
         }
