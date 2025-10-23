@@ -8,10 +8,15 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
+// Helper function to create unique test key
+function getTestKey(testName, filePath) {
+    return `${filePath}::${testName}`;
+}
+
 // Store test states
-let testStates = new Map(); // testName -> { state, message, duration, expected, actual, errorType }
+let testStates = new Map(); // testKey (filePath::testName) -> { name, filePath, state, message, duration, expected, actual, errorType }
 let previousTestStates = new Map(); // Store previous run results to detect changes
-let scrollAnchor = null; // { testName: string, viewportOffset: number } - captured before running
+let scrollAnchor = null; // { testKey: string, viewportOffset: number } - captured before running
 let previousStats = { passed: 0, failed: 0 }; // Track previous stats for flash animations (failed includes errors)
 
 function runTests() {
@@ -38,13 +43,13 @@ function renderTests(options = {}) {
     }
     
     // Store scroll position and find topmost visible test before re-rendering
-    let topmostTestName = null;
+    let topmostTestKey = null;
     let testViewportOffset = 0; // Position relative to viewport top (stays constant after render)
     const scrollTop = window.scrollY || document.documentElement.scrollTop;
     
     // Use saved scroll anchor if provided, otherwise capture current position
     if (options.useScrollAnchor && scrollAnchor) {
-        topmostTestName = scrollAnchor.testName;
+        topmostTestKey = scrollAnchor.testKey;
         testViewportOffset = scrollAnchor.viewportOffset;
     } else if (!options.skipScrollPreservation) {
         // Find which test is currently at the top of the viewport
@@ -55,19 +60,25 @@ function renderTests(options = {}) {
             if (rect.top >= 50 && rect.top <= window.innerHeight) {
                 const nameEl = item.querySelector('.test-name');
                 if (nameEl) {
-                    topmostTestName = nameEl.textContent;
-                    // Store viewport position (distance from top of viewport)
-                    testViewportOffset = rect.top;
-                    break;
+                    // Extract test key from onclick attribute
+                    const onclickAttr = item.getAttribute('onclick');
+                    const match = /handleTestClick\('(.+?)'\)/.exec(onclickAttr);
+                    if (match) {
+                        topmostTestKey = match[1].replace(/\\'/g, "'");
+                        // Store viewport position (distance from top of viewport)
+                        testViewportOffset = rect.top;
+                        break;
+                    }
                 }
             }
         }
         
-        if (!topmostTestName && testItems.length > 0) {
+        if (!topmostTestKey && testItems.length > 0) {
             // Fallback: use first test if nothing found
-            const firstNameEl = testItems[0].querySelector('.test-name');
-            if (firstNameEl) {
-                topmostTestName = firstNameEl.textContent;
+            const firstOnclick = testItems[0].getAttribute('onclick');
+            const firstMatch = /handleTestClick\('(.+?)'\)/.exec(firstOnclick);
+            if (firstMatch) {
+                topmostTestKey = firstMatch[1].replace(/\\'/g, "'");
                 const firstRect = testItems[0].getBoundingClientRect();
                 testViewportOffset = firstRect.top;
             }
@@ -133,13 +144,13 @@ function renderTests(options = {}) {
         </div>
     `;
     
-    testStates.forEach((test, name) => {
+    testStates.forEach((test, testKey) => {
         const stateClass = test.state || 'not-run';
         let displayState = test.state || 'not run';
         
         // Check if status changed from previous run
         let flashClass = '';
-        const previousTest = previousTestStates.get(name);
+        const previousTest = previousTestStates.get(testKey);
         if (previousTest && previousTest.state !== test.state) {
             // Status changed
             if ((previousTest.state === 'failed' || previousTest.state === 'not-run') && test.state === 'passed') {
@@ -149,9 +160,12 @@ function renderTests(options = {}) {
             }
         }
         
+        // Display test name with file path for context
+        const displayName = `${test.name} (${test.filePath})`;
+        
         html += `
-            <div class="test-item test-${stateClass} ${flashClass}" onclick="handleTestClick('${escapeHtml(name).replace(/'/g, "\\'")}')">
-                <div class="test-name">${formatTestName(name)}</div>
+            <div class="test-item test-${stateClass} ${flashClass}" onclick="handleTestClick('${escapeHtml(testKey).replace(/'/g, "\\'")}')">
+                <div class="test-name">${formatTestName(displayName)}</div>
                 <div class="test-status">${displayState}</div>
                 ${test.duration ? `<div class="test-duration">Duration: ${test.duration}ms</div>` : ''}
                 ${test.message ? `<div class="test-details">
@@ -171,27 +185,32 @@ function renderTests(options = {}) {
     resultsEl.innerHTML = html;
     
     // Restore scroll position to maintain same viewport offset for target test
-    if (topmostTestName && !options.skipScrollPreservation) {
+    if (topmostTestKey && !options.skipScrollPreservation) {
         // Use single requestAnimationFrame for faster restoration
         requestAnimationFrame(() => {
             const testItems = resultsEl.querySelectorAll('.test-item');
             
             for (const item of testItems) {
-                const nameEl = item.querySelector('.test-name');
-                if (nameEl && nameEl.textContent === topmostTestName) {
-                    // Find where the test is now in the viewport
-                    const rect = item.getBoundingClientRect();
-                    const currentScrollTop = window.scrollY || document.documentElement.scrollTop;
-                    
-                    // Calculate scroll needed to put test at same viewport offset
-                    const scrollDelta = rect.top - testViewportOffset;
-                    const targetScrollTop = currentScrollTop + scrollDelta;
-                    
-                    window.scrollTo({
-                        top: targetScrollTop,
-                        behavior: 'instant'
-                    });
-                    break;
+                // Extract test key from onclick attribute
+                const onclickAttr = item.getAttribute('onclick');
+                const match = /handleTestClick\('(.+?)'\)/.exec(onclickAttr);
+                if (match) {
+                    const itemTestKey = match[1].replace(/\\'/g, "'");
+                    if (itemTestKey === topmostTestKey) {
+                        // Find where the test is now in the viewport
+                        const rect = item.getBoundingClientRect();
+                        const currentScrollTop = window.scrollY || document.documentElement.scrollTop;
+                        
+                        // Calculate scroll needed to put test at same viewport offset
+                        const scrollDelta = rect.top - testViewportOffset;
+                        const targetScrollTop = currentScrollTop + scrollDelta;
+                        
+                        window.scrollTo({
+                            top: targetScrollTop,
+                            behavior: 'instant'
+                        });
+                        break;
+                    }
                 }
             }
         });
@@ -201,10 +220,11 @@ function renderTests(options = {}) {
 function renderResults(results, workspaceType) {
     // Update test states based on results
     results.tests.forEach(test => {
-        // Try to find matching test in discovered tests
+        // Try to find matching test in discovered tests by matching the test name
+        // The results might not have filePath, so we need to search for matching name
         let matchedKey = null;
         testStates.forEach((value, key) => {
-            if (key === test.name) {
+            if (value.name === test.name) {
                 matchedKey = key;
             }
         });
@@ -219,9 +239,12 @@ function renderResults(results, workspaceType) {
             state.errorType = test.errorType;
             testStates.set(matchedKey, state);
         } else {
-            // Add it anyway
-            testStates.set(test.name, {
+            // Add it anyway with a generated key (shouldn't happen but fallback)
+            const testKey = getTestKey(test.name, test.filePath || 'unknown');
+            testStates.set(testKey, {
+                name: test.name,
                 state: test.status,
+                filePath: test.filePath || 'unknown',
                 duration: test.duration,
                 message: test.message,
                 expected: test.expected,
@@ -271,7 +294,9 @@ window.addEventListener('message', event => {
             // Initialize test states with discovered tests (including all result data)
             testStates.clear();
             message.tests.forEach(test => {
-                testStates.set(test.name, {
+                const testKey = getTestKey(test.name, test.filePath);
+                testStates.set(testKey, {
+                    name: test.name,
                     state: test.state,
                     filePath: test.filePath,
                     message: test.message,
@@ -333,10 +358,12 @@ window.addEventListener('message', event => {
                 for (const item of testItems) {
                     const rect = item.getBoundingClientRect();
                     if (rect.top >= 50 && rect.top <= window.innerHeight) {
-                        const nameEl = item.querySelector('.test-name');
-                        if (nameEl) {
+                        // Extract test key from onclick attribute
+                        const onclickAttr = item.getAttribute('onclick');
+                        const match = /handleTestClick\('(.+?)'\)/.exec(onclickAttr);
+                        if (match) {
                             scrollAnchor = {
-                                testName: nameEl.textContent,
+                                testKey: match[1].replace(/\\'/g, "'"),
                                 viewportOffset: rect.top
                             };
                             break;
@@ -346,7 +373,7 @@ window.addEventListener('message', event => {
             }
             
             // Set all tests to running state
-            testStates.forEach((test, name) => {
+            testStates.forEach((test, testKey) => {
                 test.state = 'running';
             });
             renderTests({ useScrollAnchor: true }); // Use captured anchor to avoid shift
@@ -409,18 +436,17 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 // Test click handler
-function handleTestClick(testName) {
-    const testData = testStates.get(testName);
+function handleTestClick(testKey) {
+    const testData = testStates.get(testKey);
     if (!testData || testData.state === 'not-run') {
         return; // Don't show detail for not-run tests
     }
     
     // Request to open detail panel with test details
-    const test = testStates.get(testName);
     vscode.postMessage({ 
         type: 'testClicked',
-        testName: testName,
-        filePath: test ? test.filePath : ''
+        testName: testData.name,
+        filePath: testData.filePath || ''
     });
 }
 

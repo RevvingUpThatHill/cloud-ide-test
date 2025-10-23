@@ -451,19 +451,23 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
             // Update cached test states with results
             // Match test results back to discovered tests by name to get file path
             results.tests.forEach(test => {
-                // Find the discovered test with this name to get its file path
-                const discoveredTest = this.discoveredTests.find(dt => dt.name === test.name);
-                if (discoveredTest) {
-                    const key = this.getTestKey(test.name, discoveredTest.filePath);
-                    const existingState = this.testStates.get(key);
-                    if (existingState) {
-                        existingState.state = test.status;
-                        existingState.message = test.message;
-                        existingState.duration = test.duration;
-                        existingState.expected = test.expected;
-                        existingState.actual = test.actual;
-                        existingState.fullOutput = test.fullOutput;
-                    }
+                // Find ALL discovered tests with this name (handles duplicate names in different files)
+                const matchingTests = this.discoveredTests.filter(dt => dt.name === test.name);
+                
+                if (matchingTests.length > 0) {
+                    // Update all tests with this name (e.g., "should create the component" in multiple files)
+                    matchingTests.forEach(discoveredTest => {
+                        const key = this.getTestKey(test.name, discoveredTest.filePath);
+                        const existingState = this.testStates.get(key);
+                        if (existingState) {
+                            existingState.state = test.status;
+                            existingState.message = test.message;
+                            existingState.duration = test.duration;
+                            existingState.expected = test.expected;
+                            existingState.actual = test.actual;
+                            existingState.fullOutput = test.fullOutput;
+                        }
+                    });
                 }
             });
 
