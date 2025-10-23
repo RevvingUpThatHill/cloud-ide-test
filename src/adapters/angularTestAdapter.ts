@@ -310,16 +310,31 @@ module.exports = function(config) {
 
         // Add any discovered tests that weren't in the parsed results as "passed"
         // Karma typically only outputs failed tests explicitly
-        const parsedTestNames = new Set(tests.map(t => t.name));
+        // Note: We need to track by name to handle how many times each test name appears in results
+        const testNameCounts = new Map<string, number>();
+        tests.forEach(test => {
+            testNameCounts.set(test.name, (testNameCounts.get(test.name) || 0) + 1);
+        });
         
-        for (const discoveredTest of this.discoveredTests) {
-            if (!parsedTestNames.has(discoveredTest.name)) {
-                // This test was discovered but not in the output, assume it passed
-                console.log(`[Angular Adapter] Test ${discoveredTest.name} not in output, inferring passed status`);
-                tests.push({
-                    name: discoveredTest.name,
-                    status: 'passed'
-                });
+        // Count how many times each test name should appear (from discovered tests)
+        const expectedTestNameCounts = new Map<string, number>();
+        this.discoveredTests.forEach(test => {
+            expectedTestNameCounts.set(test.name, (expectedTestNameCounts.get(test.name) || 0) + 1);
+        });
+        
+        // For each test name, add missing instances as "passed"
+        for (const [testName, expectedCount] of expectedTestNameCounts.entries()) {
+            const actualCount = testNameCounts.get(testName) || 0;
+            const missingCount = expectedCount - actualCount;
+            
+            if (missingCount > 0) {
+                console.log(`[Angular Adapter] Test "${testName}" appears ${expectedCount} times but only ${actualCount} results found. Adding ${missingCount} as passed.`);
+                for (let i = 0; i < missingCount; i++) {
+                    tests.push({
+                        name: testName,
+                        status: 'passed'
+                    });
+                }
             }
         }
 
