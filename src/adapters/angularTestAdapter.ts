@@ -169,15 +169,80 @@ module.exports = function(config) {
             }
         }
 
-        // Always parse the output, whether tests passed or failed
-        const result = this.parseTestOutput(stdout, stderr, directory);
-        
         // Clean ANSI escape codes from output for display
         const cleanStdout = stdout.replace(/\x1B\[[0-9;]*[A-Za-z]/g, '');
         const cleanStderr = stderr.replace(/\x1B\[[0-9;]*[A-Za-z]/g, '');
+        const fullOutput = `=== STDOUT ===\n${cleanStdout}\n\n=== STDERR ===\n${cleanStderr}`;
+        
+        // Check for critical infrastructure errors before parsing
+        const output = stdout + '\n' + stderr;
+        
+        // Check for critical errors that prevent tests from running
+        const criticalErrors = [
+            // Missing dependencies
+            "Node packages may not be installed",
+            "Could not find the '@angular-devkit/build-angular:karma'",
+            "Error: Cannot find module",
+            "MODULE_NOT_FOUND",
+            // Command not found
+            "command not found",
+            "ng: not found",
+            // Build/compilation failures (but not test failures)
+            "Build failed",
+            "Compilation failed",
+            // No Karma output at all (indicates Karma didn't start)
+            // We'll check this separately below
+        ];
+        
+        const hasCriticalError = criticalErrors.some(error => output.includes(error));
+        
+        // Also check: if stderr has content but stdout has no test output, it's likely an error
+        const hasTestOutput = output.includes('Executed') || output.includes('SUCCESS') || output.includes('FAILED');
+        const hasStderrContent = stderr.trim().length > 0;
+        const hasOnlyWarnings = stderr.includes('Warning') || stderr.includes('DeprecationWarning') || 
+                                stderr.includes('CDP implementation') || stderr.includes('Permission denied');
+        
+        if (hasCriticalError || (hasStderrContent && !hasTestOutput && !hasOnlyWarnings)) {
+            
+            let errorMessage = "Test execution failed due to infrastructure error.";
+            
+            // Provide more specific error messages
+            if (output.includes("Node packages may not be installed") || 
+                output.includes("Could not find the '@angular-devkit/build-angular:karma'")) {
+                errorMessage = "Angular dependencies not installed. Please run 'npm install' in the project directory.";
+            } else if (output.includes("command not found") || output.includes("ng: not found")) {
+                errorMessage = "Angular CLI not found. Please install it with 'npm install -g @angular/cli'.";
+            } else if (output.includes("Cannot find module") || output.includes("MODULE_NOT_FOUND")) {
+                errorMessage = "Missing Node.js module. Please run 'npm install' in the project directory.";
+            } else if (hasStderrContent && !hasTestOutput) {
+                errorMessage = "Test framework failed to start. Check the error output for details.";
+            }
+            
+            console.error('[Angular Adapter] Critical error detected');
+            console.error('=== STDOUT ===');
+            console.error(stdout || '(empty)');
+            console.error('=== STDERR ===');
+            console.error(stderr || '(empty)');
+            
+            return {
+                tests: this.discoveredTests.map(test => ({
+                    name: test.name,
+                    status: 'error' as const,
+                    message: errorMessage,
+                    fullOutput: fullOutput
+                })),
+                totalTests: this.discoveredTests.length,
+                passedTests: 0,
+                failedTests: 0,
+                skippedTests: 0,
+                command: 'npm run test -- --watch=false --browsers=ChromeHeadless'
+            };
+        }
+        
+        // Always parse the output, whether tests passed or failed
+        const result = this.parseTestOutput(stdout, stderr, directory);
         
         // Add full output to each test for detail panel
-        const fullOutput = `=== STDOUT ===\n${cleanStdout}\n\n=== STDERR ===\n${cleanStderr}`;
         result.tests = result.tests.map(test => ({
             ...test,
             fullOutput: test.fullOutput ? test.fullOutput.replace(/\x1B\[[0-9;]*[A-Za-z]/g, '') : fullOutput

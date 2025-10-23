@@ -416,9 +416,11 @@ function handleTestClick(testName) {
     }
     
     // Request to open detail panel with test details
+    const test = testStates.get(testName);
     vscode.postMessage({ 
         type: 'testClicked',
-        testName: testName
+        testName: testName,
+        filePath: test ? test.filePath : ''
     });
 }
 

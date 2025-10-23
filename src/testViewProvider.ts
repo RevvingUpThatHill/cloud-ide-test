@@ -42,8 +42,13 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
     
     // Persistent test state - survives webview disposal
     private discoveredTests: DiscoveredTest[] = [];
-    private testStates: Map<string, TestState> = new Map();
+    private testStates: Map<string, TestState> = new Map(); // Key: `${filePath}::${testName}`
     private lastTestCommand: string = ''; // Store the command used to run tests
+    
+    // Helper to create unique test key
+    private getTestKey(testName: string, filePath: string): string {
+        return `${filePath}::${testName}`;
+    }
 
     constructor(
         private readonly _extensionUri: vscode.Uri, 
@@ -126,12 +131,15 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
             this.testStates.clear();
             this.discoveredTests.forEach(test => {
                 console.log(`[Test Discovery] Test: ${test.name}, File: ${test.filePath}`);
-                this.testStates.set(test.name, {
+                const key = this.getTestKey(test.name, test.filePath);
+                console.log(`[Test Discovery] Generated key: ${key}`);
+                this.testStates.set(key, {
                     name: test.name,
                     filePath: test.filePath,
                     state: 'not-run'
                 });
             });
+            console.log(`[Test Discovery] Total unique tests in Map: ${this.testStates.size}`);
             
             // Make test files read-only
             await this.makeTestFilesReadOnly(this.discoveredTests.map(t => t.filePath));
@@ -190,7 +198,8 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
                     break;
                 case 'testClicked':
                     // Open detail panel with test details
-                    const testState = this.testStates.get(data.testName);
+                    const key = this.getTestKey(data.testName, data.filePath);
+                    const testState = this.testStates.get(key);
                     if (testState && testState.state !== 'not-run') {
                         this.showTestDetailPanel(testState);
                     }
@@ -440,15 +449,21 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
             }
 
             // Update cached test states with results
+            // Match test results back to discovered tests by name to get file path
             results.tests.forEach(test => {
-                const existingState = this.testStates.get(test.name);
-                if (existingState) {
-                    existingState.state = test.status;
-                    existingState.message = test.message;
-                    existingState.duration = test.duration;
-                    existingState.expected = test.expected;
-                    existingState.actual = test.actual;
-                    existingState.fullOutput = test.fullOutput;
+                // Find the discovered test with this name to get its file path
+                const discoveredTest = this.discoveredTests.find(dt => dt.name === test.name);
+                if (discoveredTest) {
+                    const key = this.getTestKey(test.name, discoveredTest.filePath);
+                    const existingState = this.testStates.get(key);
+                    if (existingState) {
+                        existingState.state = test.status;
+                        existingState.message = test.message;
+                        existingState.duration = test.duration;
+                        existingState.expected = test.expected;
+                        existingState.actual = test.actual;
+                        existingState.fullOutput = test.fullOutput;
+                    }
                 }
             });
 
