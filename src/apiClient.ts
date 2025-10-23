@@ -111,7 +111,7 @@ export class ApiClient {
         
         try {
             await this.makeRequest(endpoint, payload);
-            console.log('Successfully sent execution record to API');
+            console.log(`Successfully sent execution record to API: ${this.baseUrl}${endpoint}`);
         } catch (error) {
             console.error('Failed to send execution record:', error);
             console.error('Request details:', {
@@ -175,7 +175,7 @@ export class ApiClient {
         
         try {
             await this.makeRequest(endpoint, payload);
-            console.log(`Successfully sent session data: ${sessionEvent}`);
+            console.log(`Successfully sent session data: ${sessionEvent} to ${this.baseUrl}${endpoint}`);
         } catch (error) {
             console.error('Failed to send session data:', error);
             console.error('Request details:', {
