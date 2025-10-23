@@ -24,6 +24,7 @@ export interface RevatureConfig {
     LEARNER_WORK_OS_ID: string;
     TOKEN: string;
     API_KEY?: string; // Optional API key for Revature Cloud Lab API
+    API_BASE_URL?: string; // Optional API base URL (defaults to https://dev-api.evolvtalent.ai)
 }
 
 /**

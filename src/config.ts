@@ -7,6 +7,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { readRevatureConfig } from './revatureConfig';
 
 export interface ExtensionConfig {
     // Workspace configuration
@@ -158,8 +159,12 @@ export function loadConfig(packageJson: any): ExtensionConfig {
         errors.push(`TELEMETRY_ENDPOINT must be a valid URL, got: "${telemetryEndpoint}"`);
     }
 
-    // Load Revature API configuration from environment variables
-    const apiBaseUrl = process.env.REVATURE_API_BASE_URL || 'https://dev-api.evolvtalent.ai';
+    // Load Revature API configuration
+    // Priority: .revature file > environment variable > default
+    const revatureConfig = readRevatureConfig();
+    const apiBaseUrl = revatureConfig?.API_BASE_URL || 
+                       process.env.REVATURE_API_BASE_URL || 
+                       'https://dev-api.evolvtalent.ai';
     const apiEnabled = process.env.REVATURE_API_ENABLED !== 'false'; // Enabled by default
 
     // Validate API base URL format
