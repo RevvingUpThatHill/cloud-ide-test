@@ -10,6 +10,7 @@ const execAsync = promisify(exec);
 
 /**
  * Commit and push changes with test results in the commit message
+ * Only commits and pushes if ALL tests passed (failedTests === 0)
  */
 export async function commitAndPushTestResults(
     workspaceRoot: string,
@@ -19,6 +20,14 @@ export async function commitAndPushTestResults(
     skippedTests: number
 ): Promise<void> {
     try {
+        // Only commit and push if ALL non-skipped tests passed
+        // This elegantly handles both failed and errored tests
+        const nonSkippedTests = totalTests - skippedTests;
+        if (passedTests < nonSkippedTests || failedTests > 0) {
+            console.log(`Skipping git commit/push: Not all tests passed (${passedTests}/${nonSkippedTests} passed, ${failedTests} failed)`);
+            return;
+        }
+        
         // Create timestamp
         const timestamp = new Date().toISOString();
         
