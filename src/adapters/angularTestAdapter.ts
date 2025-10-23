@@ -310,31 +310,23 @@ module.exports = function(config) {
 
         // Add any discovered tests that weren't in the parsed results as "passed"
         // Karma typically only outputs failed tests explicitly
-        // Note: We need to track by name to handle how many times each test name appears in results
-        const testNameCounts = new Map<string, number>();
+        // We need to track by unique key (name + filePath) to handle duplicates correctly
+        const testKeys = new Set<string>();
         tests.forEach(test => {
-            testNameCounts.set(test.name, (testNameCounts.get(test.name) || 0) + 1);
+            const key = test.filePath ? `${test.filePath}::${test.name}` : test.name;
+            testKeys.add(key);
         });
         
-        // Count how many times each test name should appear (from discovered tests)
-        const expectedTestNameCounts = new Map<string, number>();
-        this.discoveredTests.forEach(test => {
-            expectedTestNameCounts.set(test.name, (expectedTestNameCounts.get(test.name) || 0) + 1);
-        });
-        
-        // For each test name, add missing instances as "passed"
-        for (const [testName, expectedCount] of expectedTestNameCounts.entries()) {
-            const actualCount = testNameCounts.get(testName) || 0;
-            const missingCount = expectedCount - actualCount;
-            
-            if (missingCount > 0) {
-                console.log(`[Angular Adapter] Test "${testName}" appears ${expectedCount} times but only ${actualCount} results found. Adding ${missingCount} as passed.`);
-                for (let i = 0; i < missingCount; i++) {
-                    tests.push({
-                        name: testName,
-                        status: 'passed'
-                    });
-                }
+        // Add missing tests as "passed" with their file paths
+        for (const discoveredTest of this.discoveredTests) {
+            const key = `${discoveredTest.filePath}::${discoveredTest.name}`;
+            if (!testKeys.has(key)) {
+                console.log(`[Angular Adapter] Test "${discoveredTest.name}" at ${discoveredTest.filePath} not in results, adding as passed.`);
+                tests.push({
+                    name: discoveredTest.name,
+                    status: 'passed',
+                    filePath: discoveredTest.filePath
+                });
             }
         }
 
@@ -353,6 +345,20 @@ module.exports = function(config) {
 
     private parseJUnitXML(xmlContent: string): TestCase[] {
         const tests: TestCase[] = [];
+        
+        // Build a map of component names to file paths from discovered tests
+        const componentToFilePath = new Map<string, string>();
+        this.discoveredTests.forEach(test => {
+            const pathMatch = test.filePath.match(/([^/\\]+)\.component\.spec\.ts$/);
+            if (pathMatch) {
+                const kebabName = pathMatch[1];
+                const pascalName = kebabName
+                    .split('-')
+                    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+                    .join('') + 'Component';
+                componentToFilePath.set(pascalName, test.filePath);
+            }
+        });
         
         const testCaseRegex = /<testcase[^>]*name="([^"]*)"[^>]*classname="([^"]*)"[^>]*time="([^"]*)"[^>]*>([\s\S]*?)<\/testcase>/g;
         
@@ -398,13 +404,17 @@ module.exports = function(config) {
                 status = 'skipped';
             }
             
+            // Try to find the file path for this component
+            const filePath = componentToFilePath.get(className);
+            
             tests.push({
                 name: fullName,
                 status,
                 duration: Math.round(parseFloat(time) * 1000),
                 message: message || undefined,
                 expected: expected || undefined,
-                actual: actual || undefined
+                actual: actual || undefined,
+                filePath: filePath // Add file path if we found it
             });
         }
         
@@ -418,6 +428,25 @@ module.exports = function(config) {
         const cleanOutput = output.replace(/\x1B\[\d+[A-Z]/g, '');
         
         console.log('[Angular Adapter] Parsing Karma output for failed tests...');
+        
+        // Build a map of component names to file paths from discovered tests
+        const componentToFilePath = new Map<string, string>();
+        this.discoveredTests.forEach(test => {
+            // Extract component name from file path
+            // Example: "src/app/components/event-binding/event-binding.component.spec.ts" 
+            // -> "EventBindingComponent" or "event-binding"
+            const pathMatch = test.filePath.match(/([^/\\]+)\.component\.spec\.ts$/);
+            if (pathMatch) {
+                const kebabName = pathMatch[1]; // e.g., "event-binding"
+                // Convert to PascalCase: "event-binding" -> "EventBindingComponent"
+                const pascalName = kebabName
+                    .split('-')
+                    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+                    .join('') + 'Component';
+                componentToFilePath.set(pascalName, test.filePath);
+                console.log(`[Angular Adapter] Mapped component: ${pascalName} -> ${test.filePath}`);
+            }
+        });
         
         // Parse failed tests from Karma console output
         // Pattern: "Chrome Headless ... ComponentName testName FAILED"
@@ -448,12 +477,21 @@ module.exports = function(config) {
                 fullOutput = errorSection;
             }
             
+            // Try to find the file path for this component
+            const filePath = componentToFilePath.get(componentName);
+            if (filePath) {
+                console.log(`[Angular Adapter] Matched ${componentName} to file: ${filePath}`);
+            } else {
+                console.log(`[Angular Adapter] Could not match component name: ${componentName}`);
+            }
+            
             // Use just the test description (not component name) to match discovered tests
             tests.push({
                 name: testDescription,
                 status: 'failed',
                 message: message || undefined,
-                fullOutput: fullOutput || undefined
+                fullOutput: fullOutput || undefined,
+                filePath: filePath // Add file path if we found it
             });
         }
         

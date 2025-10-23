@@ -144,6 +144,12 @@ function renderTests(options = {}) {
         </div>
     `;
     
+    // First pass: count how many times each test name appears
+    const testNameCounts = new Map();
+    testStates.forEach((test) => {
+        testNameCounts.set(test.name, (testNameCounts.get(test.name) || 0) + 1);
+    });
+    
     testStates.forEach((test, testKey) => {
         const stateClass = test.state || 'not-run';
         let displayState = test.state || 'not run';
@@ -160,8 +166,9 @@ function renderTests(options = {}) {
             }
         }
         
-        // Display test name with file path for context
-        const displayName = `${test.name} (${test.filePath})`;
+        // Only show file path if there are duplicate test names
+        const hasDuplicates = testNameCounts.get(test.name) > 1;
+        const displayName = hasDuplicates ? `${test.name} (${test.filePath})` : test.name;
         
         html += `
             <div class="test-item test-${stateClass} ${flashClass}" onclick="handleTestClick('${escapeHtml(testKey).replace(/'/g, "\\'")}')">
@@ -218,17 +225,47 @@ function renderTests(options = {}) {
 }
 
 function renderResults(results, workspaceType) {
+    // Track which tests have been updated (for sequential matching of duplicates)
+    const testUpdateIndex = new Map(); // testName -> next index to update
+    
     // Update test states based on results
     results.tests.forEach(test => {
-        // Try to find matching test in discovered tests by matching the test name
-        // The results might not have filePath, so we need to search for matching name
         let matchedKey = null;
-        testStates.forEach((value, key) => {
-            if (value.name === test.name) {
-                matchedKey = key;
-            }
-        });
         
+        // Try to find exact match by filePath + name if filePath is available
+        if (test.filePath) {
+            const exactKey = getTestKey(test.name, test.filePath);
+            if (testStates.has(exactKey)) {
+                matchedKey = exactKey;
+                console.log(`[Webview] Exact match found for ${test.name} at ${test.filePath}`);
+            }
+        }
+        
+        // If no exact match, find by name only
+        if (!matchedKey) {
+            const matchedKeys = [];
+            testStates.forEach((value, key) => {
+                if (value.name === test.name) {
+                    matchedKeys.push(key);
+                }
+            });
+            
+            if (matchedKeys.length === 1) {
+                // Single match - update it directly
+                matchedKey = matchedKeys[0];
+            } else if (matchedKeys.length > 1) {
+                // Multiple matches (duplicates) - use sequential matching
+                // First result updates first test, second result updates second test, etc.
+                const currentIndex = testUpdateIndex.get(test.name) || 0;
+                if (currentIndex < matchedKeys.length) {
+                    matchedKey = matchedKeys[currentIndex];
+                    testUpdateIndex.set(test.name, currentIndex + 1);
+                    console.log(`[Webview] Sequential match #${currentIndex + 1} for duplicate test: ${test.name}`);
+                }
+            }
+        }
+        
+        // Update the matched test
         if (matchedKey) {
             const state = testStates.get(matchedKey);
             state.state = test.status;

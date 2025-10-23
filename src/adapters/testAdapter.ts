@@ -31,6 +31,7 @@ export interface TestCase {
     expected?: string;
     actual?: string;
     fullOutput?: string; // Full stack trace or detailed output for detail panel
+    filePath?: string; // File path for the test (used to match duplicate test names)
 }
 
 /**
