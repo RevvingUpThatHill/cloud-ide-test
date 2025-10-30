@@ -13,8 +13,9 @@ import {
 } from './adapters';
 import { TelemetryService } from './telemetry/telemetryService';
 import { getConfig } from './config';
-import { getApiClient } from './apiClient';
-import { commitAndPushTestResults, isGitRepository } from './gitHelper';
+import { getApiClient, getApiClientType } from './api/apiClientFactory';
+import { TestExecutionData } from './api/lmsClient.interface';
+import { commitAndPushTestResults, isGitRepository } from './git/gitService';
 
 const execAsync = promisify(exec);
 
@@ -404,44 +405,62 @@ export class TestViewProvider implements vscode.WebviewViewProvider {
 
             telemetry.sendOperationEnd(operationId, 'test.execution', duration);
 
-            // Send execution record to Revature API
+            // Send test results to LMS API
             const apiClient = getApiClient();
+            const apiClientType = getApiClientType();
             const testMessage = `Tests run: ${results.totalTests}, Passed: ${results.passedTests}, Failed: ${results.failedTests}, Errored: 0, Skipped: ${results.skippedTests}`;
             
-            // Send execution record asynchronously (don't block on this)
-            apiClient.sendExecutionRecord(
-                testDirectory,
-                testMessage,
-                results.passedTests,
-                results.totalTests,
-                results.failedTests,
-                0, // erroredCount - we don't track this separately yet
-                results.skippedTests
-            ).catch(error => {
-                console.error('Failed to send execution record to API:', error);
-            });
-
-            // Commit and push to git (if it's a git repository)
-            isGitRepository(testDirectory).then(isGit => {
-                if (isGit) {
-                    commitAndPushTestResults(
-                        testDirectory,
-                        results.totalTests,
-                        results.passedTests,
-                        results.failedTests,
-                        results.skippedTests
-                    ).catch(error => {
-                        console.error('Git commit/push failed:', error);
-                    });
-                } else {
-                    // Show warning if not a git repository
-                    vscode.window.showWarningMessage(
-                        'Cloud IDE Test: Workspace is not a git repository. Test results will not be committed.'
-                    );
-                }
-            }).catch(error => {
-                console.error('Failed to check git status:', error);
-            });
+            const testData: TestExecutionData = {
+                totalTests: results.totalTests,
+                passedTests: results.passedTests,
+                failedTests: results.failedTests,
+                erroredTests: 0, // We don't track this separately yet
+                skippedTests: results.skippedTests,
+                testCaseMessage: testMessage
+            };
+            
+            // Different flow for Revature vs Evolv
+            // Revature: Handles commit, API calls, and push internally
+            // Evolv: API call only, git operations handled separately
+            if (apiClientType === 'revature') {
+                // Revature API client handles: commit → capture metadata → API calls → push
+                // All operations are done internally, only need to call sendTestResults
+                console.log('[TestViewProvider] Using Revature API flow (commit → API → push)');
+                apiClient.sendTestResults(testDirectory, testData).catch(error => {
+                    console.error('[TestViewProvider] Failed to send test results (Revature):', error);
+                    vscode.window.showErrorMessage(`Failed to send test results: ${error.message}`);
+                });
+            } else {
+                // Evolv API flow: Send API call, then handle git separately
+                console.log('[TestViewProvider] Using Evolv API flow (API + separate git)');
+                
+                // Send to Evolv API (don't block on this)
+                apiClient.sendTestResults(testDirectory, testData).catch(error => {
+                    console.error('[TestViewProvider] Failed to send test results (Evolv):', error);
+                });
+                
+                // Handle git commit/push separately for Evolv
+                isGitRepository(testDirectory).then(isGit => {
+                    if (isGit) {
+                        commitAndPushTestResults(
+                            testDirectory,
+                            results.totalTests,
+                            results.passedTests,
+                            results.failedTests,
+                            results.skippedTests
+                        ).catch(error => {
+                            console.error('[TestViewProvider] Git commit/push failed:', error);
+                        });
+                    } else {
+                        // Show warning if not a git repository
+                        vscode.window.showWarningMessage(
+                            'Cloud IDE Test: Workspace is not a git repository. Test results will not be committed.'
+                        );
+                    }
+                }).catch(error => {
+                    console.error('[TestViewProvider] Failed to check git status:', error);
+                });
+            }
 
             // Store the command used for this test run
             if (results.command) {

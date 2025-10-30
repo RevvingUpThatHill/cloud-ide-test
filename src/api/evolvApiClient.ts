@@ -1,95 +1,80 @@
 /**
- * API Client for sending execution records and session data to Revature cloud lab API
+ * Evolv API Client for evolvtalent.ai LMS
+ * Implements the LMSApiClient interface for Evolv's API
  */
 
 import * as https from 'https';
-import { readRevatureConfig } from './revatureConfig';
-import { getConfig } from './config';
+import { readRevatureConfig } from '../revatureConfig';
+import { LMSApiClient, TestExecutionData, SessionEventData } from './lmsClient.interface';
 
-export interface TestExecutionRecord {
-    testCaseMessage: string;
-    passedTestCaseCount: number;
-    totalTestCaseCount: number;
-    failedTestCaseCount: number;
-    erroredTestCaseCount: number;
-    skippedTestCaseCount: number;
-}
-
-export interface SessionEvent {
-    sessionEvent: string;
-    sessionActiveTime: string; // ISO 8601 format
-}
-
-export interface ExecutionRecordPayload {
+interface ExecutionRecordPayload {
     cloudLabWorkspaceId: string;
     cloudLabLocation: string;
     learnerCurriculumActivityId: string;
-    labExecutionRecords: TestExecutionRecord;
+    labExecutionRecords: {
+        testCaseMessage: string;
+        passedTestCaseCount: number;
+        totalTestCaseCount: number;
+        failedTestCaseCount: number;
+        erroredTestCaseCount: number;
+        skippedTestCaseCount: number;
+    };
 }
 
-export interface SessionDataPayload {
+interface SessionDataPayload {
     cloudLabWorkspaceId: string;
     learnerCurriculumActivityId: string;
     activityType: string;
-    cloudLabSessionDetailsDTO: SessionEvent[];
+    cloudLabSessionDetailsDTO: Array<{
+        sessionEvent: string;
+        sessionActiveTime: string;
+    }>;
 }
 
-export class ApiClient {
+export class EvolvApiClient implements LMSApiClient {
     private readonly apiKey: string;
     private readonly baseUrl: string;
     private readonly enabled: boolean;
 
-    constructor(baseUrl?: string) {
-        try {
-            const config = getConfig();
-            this.baseUrl = baseUrl || config.api.baseUrl;
-            this.enabled = config.api.enabled;
-        } catch {
-            // If config is not available, fall back to defaults
-            this.baseUrl = baseUrl || 'https://dev-api.evolvtalent.ai';
-            this.enabled = true;
-        }
+    constructor(baseUrl: string, enabled: boolean = true) {
+        this.baseUrl = baseUrl;
+        this.enabled = enabled;
 
         // Read API key from .revature config
         const revatureConfig = readRevatureConfig();
         this.apiKey = revatureConfig?.API_KEY || '';
         
         if (!this.apiKey) {
-            console.warn('API_KEY not found in .revature config. API calls will fail.');
+            console.warn('[EvolvApiClient] API_KEY not found in .revature config');
         }
     }
 
-    /**
-     * Send test execution record to the API
-     */
-    public async sendExecutionRecord(
-        workspaceLocation: string,
-        testCaseMessage: string,
-        passedCount: number,
-        totalCount: number,
-        failedCount: number,
-        erroredCount: number,
-        skippedCount: number
-    ): Promise<void> {
-        if (!this.enabled) {
-            console.log('API client is disabled, skipping execution record');
-            return;
-        }
+    public isEnabled(): boolean {
+        return this.enabled && !!this.apiKey;
+    }
 
-        if (!this.apiKey) {
-            console.warn('Cannot send execution record: API_KEY not configured');
+    public getBaseUrl(): string {
+        return this.baseUrl;
+    }
+
+    public async sendTestResults(
+        workspaceLocation: string,
+        testData: TestExecutionData
+    ): Promise<void> {
+        if (!this.isEnabled()) {
+            console.log('[EvolvApiClient] API client is disabled or not configured');
             return;
         }
 
         const config = readRevatureConfig();
         
         if (!config) {
-            console.warn('Cannot send execution record: .revature config not found');
+            console.warn('[EvolvApiClient] Cannot send test results: .revature config not found');
             return;
         }
 
         if (!config.CLOUD_LAB_WORKSPACE_ID || !config.LEARNER_CURRICULUM_ACTIVITY_ID) {
-            console.warn('Cannot send execution record: required config fields missing');
+            console.warn('[EvolvApiClient] Cannot send test results: required Evolv config fields missing');
             return;
         }
 
@@ -98,12 +83,12 @@ export class ApiClient {
             cloudLabLocation: workspaceLocation,
             learnerCurriculumActivityId: config.LEARNER_CURRICULUM_ACTIVITY_ID,
             labExecutionRecords: {
-                testCaseMessage,
-                passedTestCaseCount: passedCount,
-                totalTestCaseCount: totalCount,
-                failedTestCaseCount: failedCount,
-                erroredTestCaseCount: erroredCount,
-                skippedTestCaseCount: skippedCount
+                testCaseMessage: testData.testCaseMessage,
+                passedTestCaseCount: testData.passedTests,
+                totalTestCaseCount: testData.totalTests,
+                failedTestCaseCount: testData.failedTests,
+                erroredTestCaseCount: testData.erroredTests,
+                skippedTestCaseCount: testData.skippedTests
             }
         };
 
@@ -111,9 +96,9 @@ export class ApiClient {
         
         try {
             await this.makeRequest(endpoint, payload);
-            console.log(`Successfully sent execution record to API: ${this.baseUrl}${endpoint}`);
+            console.log(`[EvolvApiClient] Successfully sent test results to ${this.baseUrl}${endpoint}`);
         } catch (error) {
-            console.error('Failed to send execution record:', error);
+            console.error('[EvolvApiClient] Failed to send test results:', error);
             console.error('Request details:', {
                 url: `${this.baseUrl}${endpoint}`,
                 method: 'POST',
@@ -123,41 +108,31 @@ export class ApiClient {
                 },
                 payload: JSON.stringify(payload, null, 2)
             });
+            throw error;
         }
     }
 
-    /**
-     * Send session data to the API
-     */
-    public async sendSessionData(
-        sessionEvent: string,
-        sessionActiveTime?: Date
-    ): Promise<void> {
-        if (!this.enabled) {
-            console.log('API client is disabled, skipping session data');
-            return;
-        }
-
-        if (!this.apiKey) {
-            console.warn('Cannot send session data: API_KEY not configured');
+    public async sendSessionEvent(eventData: SessionEventData): Promise<void> {
+        if (!this.isEnabled()) {
+            console.log('[EvolvApiClient] API client is disabled or not configured');
             return;
         }
 
         const config = readRevatureConfig();
         
         if (!config) {
-            console.warn('Cannot send session data: .revature config not found');
+            console.warn('[EvolvApiClient] Cannot send session event: .revature config not found');
             return;
         }
 
         if (!config.CLOUD_LAB_WORKSPACE_ID || 
             !config.LEARNER_CURRICULUM_ACTIVITY_ID || 
             !config.ACTIVITY_TYPE) {
-            console.warn('Cannot send session data: required config fields missing');
+            console.warn('[EvolvApiClient] Cannot send session event: required Evolv config fields missing');
             return;
         }
 
-        const timestamp = sessionActiveTime || new Date();
+        const timestamp = eventData.sessionActiveTime || new Date();
         
         const payload: SessionDataPayload = {
             cloudLabWorkspaceId: config.CLOUD_LAB_WORKSPACE_ID,
@@ -165,7 +140,7 @@ export class ApiClient {
             activityType: config.ACTIVITY_TYPE,
             cloudLabSessionDetailsDTO: [
                 {
-                    sessionEvent,
+                    sessionEvent: eventData.sessionEvent,
                     sessionActiveTime: timestamp.toISOString()
                 }
             ]
@@ -175,9 +150,9 @@ export class ApiClient {
         
         try {
             await this.makeRequest(endpoint, payload);
-            console.log(`Successfully sent session data: ${sessionEvent} to ${this.baseUrl}${endpoint}`);
+            console.log(`[EvolvApiClient] Successfully sent session event: ${eventData.sessionEvent}`);
         } catch (error) {
-            console.error('Failed to send session data:', error);
+            console.error('[EvolvApiClient] Failed to send session event:', error);
             console.error('Request details:', {
                 url: `${this.baseUrl}${endpoint}`,
                 method: 'POST',
@@ -187,11 +162,12 @@ export class ApiClient {
                 },
                 payload: JSON.stringify(payload, null, 2)
             });
+            throw error;
         }
     }
 
     /**
-     * Make HTTPS request to API
+     * Make HTTPS request to Evolv API
      */
     private makeRequest(endpoint: string, payload: any): Promise<void> {
         return new Promise((resolve, reject) => {
@@ -240,15 +216,5 @@ export class ApiClient {
             req.end();
         });
     }
-}
-
-// Singleton instance
-let apiClientInstance: ApiClient | null = null;
-
-export function getApiClient(): ApiClient {
-    if (!apiClientInstance) {
-        apiClientInstance = new ApiClient();
-    }
-    return apiClientInstance;
 }
 

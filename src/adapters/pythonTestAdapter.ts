@@ -4,6 +4,8 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import { TestAdapter, TestResult, TestCase, DiscoveredTest } from './testAdapter';
+import { decodeXmlEntities } from './shared/xmlUtils';
+import { cleanAnsiEscapeCodes, generateFullOutput } from './shared/outputUtils';
 
 const execAsync = promisify(exec);
 
@@ -122,15 +124,11 @@ export class PythonTestAdapter implements TestAdapter {
         // Always parse the output, whether tests passed or failed
         const result = this.parseTestOutput(stdout, stderr, directory);
         
-        // Clean ANSI escape codes from output for display
-        const cleanStdout = stdout.replace(/\x1B\[[0-9;]*[A-Za-z]/g, '');
-        const cleanStderr = stderr.replace(/\x1B\[[0-9;]*[A-Za-z]/g, '');
-        
-        // Add full output to each test for detail panel
-        const fullOutput = `=== STDOUT ===\n${cleanStdout}\n\n=== STDERR ===\n${cleanStderr}`;
+        // Generate full output for display (cleans ANSI codes automatically)
+        const fullOutput = generateFullOutput(stdout, stderr);
         result.tests = result.tests.map(test => ({
             ...test,
-            fullOutput: test.fullOutput ? test.fullOutput.replace(/\x1B\[[0-9;]*[A-Za-z]/g, '') : fullOutput // Use test-specific output if available
+            fullOutput: test.fullOutput ? cleanAnsiEscapeCodes(test.fullOutput) : fullOutput
         }));
         
         // Add the successful command to the result
@@ -249,8 +247,8 @@ export class PythonTestAdapter implements TestAdapter {
                 status = 'failed';
                 const failureMatch = /<failure[^>]*message="([^"]*)"[^>]*>([\s\S]*?)<\/failure>/.exec(content);
                 if (failureMatch) {
-                    message = this.decodeXmlEntities(failureMatch[1]);
-                    const fullMessage = this.decodeXmlEntities(failureMatch[2]);
+                    message = decodeXmlEntities(failureMatch[1]);
+                    const fullMessage = decodeXmlEntities(failureMatch[2]);
                     
                     // Include the full traceback in the message for better debugging
                     message = fullMessage || message;
@@ -276,14 +274,14 @@ export class PythonTestAdapter implements TestAdapter {
                 status = 'skipped';
                 const skippedMatch = /<skipped[^>]*message="([^"]*)"/.exec(content);
                 if (skippedMatch) {
-                    message = this.decodeXmlEntities(skippedMatch[1]);
+                    message = decodeXmlEntities(skippedMatch[1]);
                 }
             } else if (content.includes('<error')) {
                 status = 'failed';
                 const errorMatch = /<error[^>]*message="([^"]*)"[^>]*>([\s\S]*?)<\/error>/.exec(content);
                 if (errorMatch) {
-                    const errorMessage = this.decodeXmlEntities(errorMatch[1]);
-                    const fullErrorMessage = this.decodeXmlEntities(errorMatch[2]);
+                    const errorMessage = decodeXmlEntities(errorMatch[1]);
+                    const fullErrorMessage = decodeXmlEntities(errorMatch[2]);
                     message = fullErrorMessage || errorMessage;
                 }
             }
@@ -558,15 +556,6 @@ export class PythonTestAdapter implements TestAdapter {
         }
         
         return tests;
-    }
-
-    private decodeXmlEntities(text: string): string {
-        return text
-            .replace(/&lt;/g, '<')
-            .replace(/&gt;/g, '>')
-            .replace(/&quot;/g, '"')
-            .replace(/&apos;/g, "'")
-            .replace(/&amp;/g, '&');
     }
     
     private determineSuccessfulCommand(stdout: string, stderr: string, directory: string): string {

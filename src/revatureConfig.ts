@@ -8,6 +8,7 @@ import * as path from 'path';
 import * as os from 'os';
 
 export interface RevatureConfig {
+    // Git configuration
     GIT_ACCESS_TOKEN: string;
     GIT_USERNAME: string;
     GITHUB_TOKEN: string;
@@ -17,14 +18,25 @@ export interface RevatureConfig {
     REPO_PATH: string;
     USER_IP: string;
     HOST: string;
-    LEARNER_CURRICULUM_ACTIVITY_ID: string;
-    ACTIVITY_TYPE: string;
-    WORKSPACE_CONTEXT_URL: string;
-    CLOUD_LAB_WORKSPACE_ID: string;
-    LEARNER_WORK_OS_ID: string;
+    
+    // Evolv-specific fields (evolvtalent.ai API)
+    LEARNER_CURRICULUM_ACTIVITY_ID?: string;
+    ACTIVITY_TYPE?: string;
+    WORKSPACE_CONTEXT_URL?: string;
+    CLOUD_LAB_WORKSPACE_ID?: string;
+    LEARNER_WORK_OS_ID?: string;
+    
+    // Revature-specific fields (revature.com API)
+    REVPRO_WORKSPACE_ID?: string;
+    PROJECT_TYPE?: string; // Also referred to as projectCode in API
+    TRAINEE_CODING_LAB_ID?: string;
+    INTERN_ID?: string;
+    GITPOD_WORKSPACE_CONTEXT_URL?: string;
+    
+    // Common fields
     TOKEN: string;
-    API_KEY?: string; // Optional API key for Revature Cloud Lab API
-    API_BASE_URL?: string; // Optional API base URL (defaults to https://dev-api.evolvtalent.ai)
+    API_KEY?: string; // API key for cloud lab API
+    API_BASE_URL?: string; // Base URL determines which implementation to use
 }
 
 /**
@@ -111,13 +123,5 @@ function parseRevatureConfig(configPath: string): RevatureConfig | null {
         console.error(`Failed to parse .revature config from ${configPath}:`, error);
         return null;
     }
-}
-
-/**
- * Get a specific value from the Revature config
- */
-export function getRevatureConfigValue(key: keyof RevatureConfig): string | undefined | null {
-    const config = readRevatureConfig();
-    return config ? config[key] : null;
 }
 

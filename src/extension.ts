@@ -2,7 +2,11 @@ import * as vscode from 'vscode';
 import { TestViewProvider } from './testViewProvider';
 import { TelemetryService } from './telemetry/telemetryService';
 import { loadConfig, setConfig, ConfigurationError } from './config';
-import { getApiClient } from './apiClient';
+import { getApiClient } from './api/apiClientFactory';
+import { SessionTrackingService } from './sessionTracking';
+
+// Track session tracking service globally for deactivation
+let globalSessionTracking: SessionTrackingService | null = null;
 
 export async function activate(context: vscode.ExtensionContext) {
     console.log('Cloud IDE Test extension is now active');
@@ -43,20 +47,27 @@ export async function activate(context: vscode.ExtensionContext) {
         );
         context.subscriptions.push(runTestsCommand);
 
-        // Register session data tracking for file save events
+        // Initialize session tracking service
+        // Tracks all user activity events for both Evolv and Revature APIs:
+        // - Session Started/Ended
+        // - File operations (save, change, create, delete, rename)
+        // - Debug operations (start, end, breakpoints)
         const apiClient = getApiClient();
-        const onDidSaveDisposable = vscode.workspace.onDidSaveTextDocument((document) => {
-            // Send session data to API (asynchronously)
-            apiClient.sendSessionData('onDidSaveTextDocument').catch(error => {
-                console.error('Failed to send session data:', error);
-            });
+        const sessionTracking = new SessionTrackingService(apiClient);
+        globalSessionTracking = sessionTracking; // Store for deactivation
+        
+        // Initialize all event listeners
+        sessionTracking.initialize();
+        
+        // Send initial "Session Started" event
+        sessionTracking.sendSessionStarted();
+        
+        // Register session tracking for disposal
+        context.subscriptions.push({
+            dispose: () => {
+                sessionTracking.dispose();
+            }
         });
-        context.subscriptions.push(onDidSaveDisposable);
-
-        // Track workspace open event - DISABLED
-        // apiClient.sendSessionData('onWorkspaceOpen').catch(error => {
-        //     console.error('Failed to send initial session data:', error);
-        // });
 
         // Register telemetry disposal
         context.subscriptions.push({
@@ -107,6 +118,16 @@ export async function activate(context: vscode.ExtensionContext) {
 }
 
 export async function deactivate() {
-    console.log('Cloud IDE Test extension is now deactivated');
+    console.log('Cloud IDE Test extension is now deactivating');
+    
+    // Send "Session Ended" event (best effort - may not fire on browser tab close)
+    // In Theia/browser environments, this might not execute if the tab is closed abruptly
+    if (globalSessionTracking) {
+        globalSessionTracking.sendSessionEnded();
+    }
+    
+    // Dispose telemetry
     await TelemetryService.getInstance().dispose();
+    
+    console.log('Cloud IDE Test extension deactivated');
 }

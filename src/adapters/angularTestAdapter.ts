@@ -4,6 +4,8 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import { TestAdapter, TestResult, TestCase, DiscoveredTest } from './testAdapter';
+import { decodeXmlEntities } from './shared/xmlUtils';
+import { cleanAnsiEscapeCodes, generateFullOutput } from './shared/outputUtils';
 
 const execAsync = promisify(exec);
 
@@ -169,10 +171,8 @@ module.exports = function(config) {
             }
         }
 
-        // Clean ANSI escape codes from output for display
-        const cleanStdout = stdout.replace(/\x1B\[[0-9;]*[A-Za-z]/g, '');
-        const cleanStderr = stderr.replace(/\x1B\[[0-9;]*[A-Za-z]/g, '');
-        const fullOutput = `=== STDOUT ===\n${cleanStdout}\n\n=== STDERR ===\n${cleanStderr}`;
+        // Generate full output for display (cleans ANSI codes automatically)
+        const fullOutput = generateFullOutput(stdout, stderr);
         
         // Check for critical infrastructure errors before parsing
         const output = stdout + '\n' + stderr;
@@ -245,7 +245,7 @@ module.exports = function(config) {
         // Add full output to each test for detail panel
         result.tests = result.tests.map(test => ({
             ...test,
-            fullOutput: test.fullOutput ? test.fullOutput.replace(/\x1B\[[0-9;]*[A-Za-z]/g, '') : fullOutput
+            fullOutput: test.fullOutput ? cleanAnsiEscapeCodes(test.fullOutput) : fullOutput
         }));
         
         // Add the command to the result
@@ -376,7 +376,7 @@ module.exports = function(config) {
                 status = 'failed';
                 const failureMatch = /<failure[^>]*>([\s\S]*?)<\/failure>/.exec(content);
                 if (failureMatch) {
-                    const fullMessage = this.decodeXmlEntities(failureMatch[1]);
+                    const fullMessage = decodeXmlEntities(failureMatch[1]);
                     
                     // Determine if this is an assertion failure or other error
                     const isAssertionError = /Expected|toBe|toEqual|toMatch|toContain/i.test(fullMessage);
@@ -396,7 +396,7 @@ module.exports = function(config) {
                 status = 'failed';
                 const errorMatch = /<error[^>]*>([\s\S]*?)<\/error>/.exec(content);
                 if (errorMatch) {
-                    const fullMessage = this.decodeXmlEntities(errorMatch[1]);
+                    const fullMessage = decodeXmlEntities(errorMatch[1]);
                     // Errors are always non-assertion
                     message = this.parseJasmineError(fullMessage);
                 }
@@ -620,15 +620,6 @@ module.exports = function(config) {
         }
         
         return messageParts.join('\n');
-    }
-    
-    private decodeXmlEntities(text: string): string {
-        return text
-            .replace(/&lt;/g, '<')
-            .replace(/&gt;/g, '>')
-            .replace(/&quot;/g, '"')
-            .replace(/&apos;/g, "'")
-            .replace(/&amp;/g, '&');
     }
 }
 
