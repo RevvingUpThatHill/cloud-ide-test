@@ -105,19 +105,11 @@ function parseRevatureConfig(configPath: string): RevatureConfig | null {
             }
         }
 
-        // Validate required fields
-        const requiredFields: (keyof RevatureConfig)[] = [
-            'CLOUD_LAB_WORKSPACE_ID',
-            'LEARNER_CURRICULUM_ACTIVITY_ID',
-            'ACTIVITY_TYPE'
-        ];
-
-        for (const field of requiredFields) {
-            if (!config[field]) {
-                console.warn(`.revature config is missing required field: ${field}`);
-            }
-        }
-
+        // Note: We don't validate required fields here because they differ between
+        // Evolv (CLOUD_LAB_WORKSPACE_ID, LEARNER_CURRICULUM_ACTIVITY_ID, ACTIVITY_TYPE)
+        // and Revature (REVPRO_WORKSPACE_ID, PROJECT_TYPE).
+        // The actual API clients validate their specific required fields when making requests.
+        
         return config as RevatureConfig;
     } catch (error) {
         console.error(`Failed to parse .revature config from ${configPath}:`, error);
