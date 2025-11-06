@@ -4,26 +4,27 @@
  * 
  * This client handles:
  * - Session tracking (extension activation)
- * - Git commit with metadata capture
- * - Test case reporting with custom file format
- * - Commit status updates
- * - Git push (only after successful API calls)
+ * - Test case reporting (simplified - no file byte array needed)
+ * - Commit status updates (reports that commit happened)
+ * - Git commit and push
+ * 
+ * Flow: Commit → Run Tests → Send /test-case → Send /commit-status → Push
+ * (User clicking "Run Tests" means they're done coding, so commit happens first)
  */
 
 import * as https from 'https';
 import { readRevatureConfig } from '../revatureConfig';
 import { LMSApiClient, TestExecutionData, SessionEventData } from './lmsClient.interface';
-import { commitAndCaptureMetadata, pushToRemote, CommitMetadata } from '../git/gitService';
-import { generateTestCaseFile, TestCase } from '../utils/testCaseFileGenerator';
+import { commitAndCaptureMetadata, pushToRemote } from '../git/gitService';
 
 interface RevatureTestCasePayload {
     revproWorkspaceId: string;
-    projectCode: string;
+    projectCode: string; // PT001 (project) or PT002 (assignment)
     cloudLabTestcasesDTO: {
         fileName: string;
         testcaseMessage: string;
-        file: number[];
-        viaCommitted: boolean;
+        file: number[]; // Empty array - not needed per feedback
+        viaCommitted: boolean; // false - no git commit needed upfront
     };
 }
 
@@ -37,29 +38,6 @@ interface RevatureSessionPayload {
     }>;
 }
 
-interface RevatureCommitPayload {
-    revproWorkspaceId: string;
-    gitpodWorkspaceId: string;
-    projectCode: string;
-    cloudLabCommitDetailsDTO: {
-        commitedTime: string;
-        gitUserName: string;
-        repositoryUrl: string;
-        commitSha: string;
-        commitMessage: string;
-        filesChanged: number;
-        insertions: number;
-        deletions: number;
-        lineCount: number;
-    };
-    cloudLabTestcasesDTO: {
-        fileName: string;
-        testcaseMessage: string;
-        file: number[];
-        viaCommitted: boolean;
-    };
-}
-
 interface RevatureCommitStatusPayload {
     revproWorkspaceId: string;
     projectCode: string;
@@ -69,7 +47,6 @@ export class RevatureApiClient implements LMSApiClient {
     private readonly apiKey: string;
     private readonly baseUrl: string;
     private readonly enabled: boolean;
-    private lastCommitMetadata: CommitMetadata | null = null;
 
     constructor(baseUrl: string, enabled: boolean = true) {
         this.baseUrl = baseUrl;
@@ -94,7 +71,8 @@ export class RevatureApiClient implements LMSApiClient {
 
     /**
      * Send test results to Revature API
-     * Flow: Commit → Capture metadata → Send commit-details → Send commit-status → Push
+     * Flow: Commit → (tests already ran) → Send test-case → Send commit-status → Push
+     * User clicking "Run Tests" means they're done coding, so commit happens first
      */
     public async sendTestResults(
         workspaceLocation: string,
@@ -119,39 +97,27 @@ export class RevatureApiClient implements LMSApiClient {
         }
 
         try {
-            // Step 1: Create commit message
-            const commitMessage = `Test run: ${testData.passedTests}/${testData.totalTests} passed, ${testData.failedTests} failed, ${testData.skippedTests} skipped - ${new Date().toISOString()}`;
-            
-            // Step 2: Commit and capture metadata
+            // Step 1: Commit changes (user is done coding when they run tests)
             console.log('[RevatureApiClient] Committing changes...');
+            const commitMessage = `Test run: ${testData.passedTests}/${testData.totalTests} passed, ${testData.failedTests} failed, ${testData.skippedTests} skipped - ${new Date().toISOString()}`;
             const commitMetadata = await commitAndCaptureMetadata(workspaceLocation, commitMessage);
             
             if (!commitMetadata) {
                 console.log('[RevatureApiClient] No changes to commit, skipping API calls');
                 return;
             }
-            
-            this.lastCommitMetadata = commitMetadata;
             console.log('[RevatureApiClient] Commit successful:', commitMetadata.commitSha);
             
-            // Step 3: Generate test case file (custom Revature format)
-            // Note: We need to extract test cases from testData
-            // For now, we'll create a simplified representation
-            // In a real implementation, this would be passed from the test runner
-            const testCaseFile = this.generateTestCaseFileFromData(testData);
-            
-            // Step 4: Send commit-details with test cases
-            console.log('[RevatureApiClient] Sending commit details to API...');
-            await this.sendCommitDetails(
+            // Step 2: Send test-case endpoint with test results
+            console.log('[RevatureApiClient] Sending test case results to API...');
+            await this.sendTestCase(
                 config.REVPRO_WORKSPACE_ID,
                 config.PROJECT_TYPE,
-                commitMetadata,
-                testCaseFile.byteArray,
                 testData.testCaseMessage
             );
-            console.log('[RevatureApiClient] Commit details sent successfully');
+            console.log('[RevatureApiClient] Test case results sent successfully');
             
-            // Step 5: Send commit-status (PATCH)
+            // Step 3: Send commit-status (report that commit happened)
             console.log('[RevatureApiClient] Updating commit status...');
             await this.sendCommitStatus(
                 config.REVPRO_WORKSPACE_ID,
@@ -159,7 +125,7 @@ export class RevatureApiClient implements LMSApiClient {
             );
             console.log('[RevatureApiClient] Commit status updated successfully');
             
-            // Step 6: Push to remote (only if all API calls succeeded)
+            // Step 4: Push to remote
             console.log('[RevatureApiClient] Pushing to remote...');
             await pushToRemote(workspaceLocation);
             console.log('[RevatureApiClient] Push successful');
@@ -218,53 +184,38 @@ export class RevatureApiClient implements LMSApiClient {
     }
 
     /**
-     * Send commit details with test cases to Revature API
+     * Send test case results to Revature API (new simplified endpoint)
+     * No git metadata or file byte array needed
      */
-    private async sendCommitDetails(
+    private async sendTestCase(
         revproWorkspaceId: string,
         projectCode: string,
-        commitMetadata: CommitMetadata,
-        testCaseFileBytes: number[],
         testCaseMessage: string
     ): Promise<void> {
-        const config = readRevatureConfig();
-        
-        const payload: RevatureCommitPayload = {
+        const payload: RevatureTestCasePayload = {
             revproWorkspaceId,
-            gitpodWorkspaceId: config?.GITPOD_WORKSPACE_CONTEXT_URL || commitMetadata.repositoryUrl,
-            projectCode,
-            cloudLabCommitDetailsDTO: {
-                commitedTime: commitMetadata.commitTime,
-                gitUserName: commitMetadata.gitUserName,
-                repositoryUrl: commitMetadata.repositoryUrl,
-                commitSha: commitMetadata.commitSha,
-                commitMessage: commitMetadata.commitMessage,
-                filesChanged: commitMetadata.filesChanged,
-                insertions: commitMetadata.insertions,
-                deletions: commitMetadata.deletions,
-                lineCount: commitMetadata.lineCount
-            },
+            projectCode, // PT001 (project) or PT002 (assignment)
             cloudLabTestcasesDTO: {
                 fileName: 'testCases_log.txt',
                 testcaseMessage: testCaseMessage,
-                file: testCaseFileBytes,
-                viaCommitted: false // False for now; true when git hooks are implemented
+                file: [], // Empty array - not needed per feedback
+                viaCommitted: false
             }
         };
 
-        const endpoint = '/apigateway/associates/secure/cloud-lab/commit-details';
+        const endpoint = '/apigateway/associates/secure/cloud-lab/test-case';
         
         try {
             await this.makeRequest(endpoint, payload, 'POST');
         } catch (error) {
-            console.error('[RevatureApiClient] Failed to send commit details:', error);
+            console.error('[RevatureApiClient] Failed to send test case:', error);
             throw error;
         }
     }
 
     /**
-     * Update commit status (PATCH request)
-     * Called after commit-details is sent successfully
+     * Update commit status (POST request)
+     * Called after test-case is sent successfully - indicates user "initiated commit"
      */
     private async sendCommitStatus(
         revproWorkspaceId: string,
@@ -278,53 +229,13 @@ export class RevatureApiClient implements LMSApiClient {
         const endpoint = '/apigateway/associates/secure/cloud-lab/commit-status';
         
         try {
-            await this.makeRequest(endpoint, payload, 'PATCH');
+            await this.makeRequest(endpoint, payload, 'POST');
         } catch (error) {
             console.error('[RevatureApiClient] Failed to update commit status:', error);
             throw error;
         }
     }
 
-    /**
-     * Generate test case file from test execution data
-     * This creates a simplified version since we don't have individual test details here
-     * In a full implementation, this would receive the complete test results array
-     */
-    private generateTestCaseFileFromData(testData: TestExecutionData): { content: string; byteArray: number[] } {
-        // Create synthetic test cases for the custom format
-        // In real usage, the caller should provide the actual test cases
-        // For now, we'll generate a summary entry
-        const syntheticTestCases: TestCase[] = [];
-        
-        // Create entries for passed tests
-        for (let i = 0; i < testData.passedTests; i++) {
-            syntheticTestCases.push({
-                name: `test${i + 1}`,
-                status: 'passed',
-                duration: 0
-            });
-        }
-        
-        // Create entries for failed tests
-        for (let i = 0; i < testData.failedTests; i++) {
-            syntheticTestCases.push({
-                name: `test${testData.passedTests + i + 1}`,
-                status: 'failed',
-                duration: 0
-            });
-        }
-        
-        // Create entries for errored tests
-        for (let i = 0; i < testData.erroredTests; i++) {
-            syntheticTestCases.push({
-                name: `test${testData.passedTests + testData.failedTests + i + 1}`,
-                status: 'error',
-                duration: 0
-            });
-        }
-        
-        return generateTestCaseFile(syntheticTestCases);
-    }
 
     /**
      * Make HTTPS request to Revature API
