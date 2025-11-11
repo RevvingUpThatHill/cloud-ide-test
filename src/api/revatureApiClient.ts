@@ -214,7 +214,7 @@ export class RevatureApiClient implements LMSApiClient {
     }
 
     /**
-     * Update commit status (POST request)
+     * Update commit status (PATCH request)
      * Called after test-case is sent successfully - indicates user "initiated commit"
      */
     private async sendCommitStatus(
@@ -229,7 +229,7 @@ export class RevatureApiClient implements LMSApiClient {
         const endpoint = '/apigateway/associates/secure/cloud-lab/commit-status';
         
         try {
-            await this.makeRequest(endpoint, payload, 'POST');
+            await this.makeRequest(endpoint, payload, 'PATCH');
         } catch (error) {
             console.error('[RevatureApiClient] Failed to update commit status:', error);
             throw error;
