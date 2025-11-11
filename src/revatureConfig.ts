@@ -91,7 +91,18 @@ function parseRevatureConfig(configPath: string): RevatureConfig | null {
                 let value = match[2];
                 
                 // Decode Base64-encoded fields (these are encoded in the .revature file)
-                const base64Fields = ['CLOUD_LAB_WORKSPACE_ID', 'LEARNER_CURRICULUM_ACTIVITY_ID', 'ACTIVITY_TYPE'];
+                // Evolv fields: CLOUD_LAB_WORKSPACE_ID, LEARNER_CURRICULUM_ACTIVITY_ID, ACTIVITY_TYPE
+                // Revature fields: REVPRO_WORKSPACE_ID, PROJECT_TYPE, TRAINEE_CODING_LAB_ID, HOST, TOKEN
+                const base64Fields = [
+                    'CLOUD_LAB_WORKSPACE_ID', 
+                    'LEARNER_CURRICULUM_ACTIVITY_ID', 
+                    'ACTIVITY_TYPE',
+                    'REVPRO_WORKSPACE_ID',
+                    'PROJECT_TYPE',
+                    'TRAINEE_CODING_LAB_ID',
+                    'HOST',
+                    'TOKEN'
+                ];
                 if (base64Fields.includes(key) && value) {
                     try {
                         value = Buffer.from(value, 'base64').toString('utf8');
